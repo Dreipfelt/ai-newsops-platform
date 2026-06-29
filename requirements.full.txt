@@ -2,13 +2,10 @@ fastapi
 uvicorn[standard]
 httpx
 pytest
-
 pandas
 numpy
 scikit-learn
-
 matplotlib
 seaborn
-
 python-dotenv
 requests
