@@ -56,18 +56,18 @@ data/raw/News_Category_Dataset_v3.json
 ```
 
 ## Project structure
-ai-newsops-platform/
-├── app/
-├── src/
-├── tests/
-├── notebooks/
-├── docs/
-├── Dockerfile
-├── docker-compose.yml
-├── Makefile
-├── requirements.txt
-└── README.md
-
+ai-newsops-platform/   
+├── app/   
+├── src/   
+├── tests/   
+├── notebooks/   
+├── docs/   
+├── Dockerfile   
+├── docker-compose.yml   
+├── Makefile   
+├── requirements.txt   
+└── README.md   
+ 
 ## Installation
 python -m venv .venv
 source .venv/bin/activate
