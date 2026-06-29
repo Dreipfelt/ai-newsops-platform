@@ -10,3 +10,4 @@ seaborn
 python-dotenv
 requests
 joblib
+mlflow

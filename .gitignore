@@ -22,3 +22,4 @@ logs/
 *.zip
 *.tar.gz
 .vscode/
+mlflow.db
