@@ -1,0 +1,11 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-newsops-api
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: local
+    restart: unless-stopped
