@@ -4,12 +4,16 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 
-
-models/
+data/
+datasets/
 artifacts/
 mlruns/
 outputs/
 logs/
+
+models/*
+!models/distilbert/
+!models/distilbert/**
 
 *.csv
 *.parquet
@@ -22,14 +26,13 @@ logs/
 *.tar.gz
 .vscode/
 mlflow.db
-
-# DVC — ignorer les données brutes mais tracker les .dvc files
-!data/raw/*.dvc
-!data/processed/*.dvc
-!data/**/.gitignore
-
-
-# Data — ignorer le contenu mais pas les fichiers DVC
-data/**
-!data/**/.gitignore
-!data/**/*.dvc
+reports/
+mlruns/
+mlflow.db
+# Secrets — JAMAIS commiter
+*.txt
+!requirements.txt
+!README.txt
+hf-token*
+*token*.txt
+*Token*.txt
