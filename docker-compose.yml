@@ -1,11 +1,69 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+# AI NewsOps Platform — Docker Compose
+# Services : API FastAPI + MLflow UI
+# Usage    : docker-compose up --build
+# ─────────────────────────────────────────────────────────────
+
 services:
+
+  # ── API FastAPI ──────────────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ai-newsops-api
+    container_name: newsops-api
     ports:
       - "8000:8000"
     environment:
-      ENVIRONMENT: local
+      - MODEL_DIR=/app/models/distilbert/best_model
+      - DATA_DIR=/app/data/processed
+      - MAX_LENGTH=128
+      - MODEL_VERSION=1.0.0
+    volumes:
+      # Monte les artifacts en read-only — pas besoin de rebuild si le modèle change
+      - ./models/distilbert/best_model:/app/models/distilbert/best_model:ro
+      - ./models/distilbert/training_metrics.json:/app/models/distilbert/training_metrics.json:ro
+      - ./data/processed/label_mapping.json:/app/data/processed/label_mapping.json:ro
+      # Logs persistants
+      - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  # ── MLflow UI ────────────────────────────────────────────────
+  mlflow:
+    image: python:3.10-slim
+    container_name: newsops-mlflow
+    command: >
+      bash -c "pip install -q mlflow &&
+               mlflow server
+               --backend-store-uri sqlite:///mlruns/mlflow.db
+               --default-artifact-root /mlruns/artifacts
+               --host 0.0.0.0
+               --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlruns:/mlruns
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  mlruns:
+    driver: local
