@@ -209,7 +209,7 @@ def main(args):
         log.info("\n  ── Résultats TEST ────────────────────────────────────")
         log.info(f"  F1 macro : {test_f1:.4f}  |  Accuracy : {test_acc:.4f}")
 
-        report_val = classification_report(
+        _ = classification_report(
             y_val, y_val_pred, target_names=class_names, output_dict=True
         )
         report_test = classification_report(
