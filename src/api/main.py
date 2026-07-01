@@ -27,7 +27,6 @@ import numpy as np
 from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 # ─────────────────────────────────────────────────────────────
@@ -43,23 +42,23 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────
-MODEL_DIR     = Path(os.getenv("MODEL_DIR", "models/distilbert/best_model"))
-DATA_DIR      = Path(os.getenv("DATA_DIR",  "data/processed"))
-MAX_LENGTH    = int(os.getenv("MAX_LENGTH", "128"))
-DEVICE        = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-API_VERSION   = "1.0.0"
+MODEL_DIR = Path(os.getenv("MODEL_DIR", "models/distilbert/best_model"))
+DATA_DIR = Path(os.getenv("DATA_DIR", "data/processed"))
+MAX_LENGTH = int(os.getenv("MAX_LENGTH", "128"))
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+API_VERSION = "1.0.0"
 MODEL_VERSION = os.getenv("MODEL_VERSION", "1.0.0")
 
 # État global du modèle (chargé au démarrage via lifespan)
 model_state = {
-    "tokenizer":   None,
-    "model":       None,
-    "id2label":    None,
-    "loaded_at":   None,
-    "n_requests":  0,
-    "n_errors":    0,
+    "tokenizer": None,
+    "model": None,
+    "id2label": None,
+    "loaded_at": None,
+    "n_requests": 0,
+    "n_errors": 0,
     "total_latency_ms": 0.0,
-    "metrics":     {},
+    "metrics": {},
 }
 
 
@@ -77,7 +76,9 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(f"Model directory not found: {MODEL_DIR}")
 
     model_state["tokenizer"] = DistilBertTokenizerFast.from_pretrained(MODEL_DIR)
-    model_state["model"]     = DistilBertForSequenceClassification.from_pretrained(MODEL_DIR)
+    model_state["model"] = DistilBertForSequenceClassification.from_pretrained(
+        MODEL_DIR
+    )
     model_state["model"].to(DEVICE)
     model_state["model"].eval()
     model_state["loaded_at"] = datetime.utcnow().isoformat()
@@ -162,20 +163,24 @@ class ArticleInput(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "examples": [{
-                "headline": "SpaceX launches new rocket to the Moon",
-                "short_description": "Elon Musk's company successfully launched a new rocket targeting lunar orbit.",
-            }]
+            "examples": [
+                {
+                    "headline": "SpaceX launches new rocket to the Moon",
+                    "short_description": "Elon Musk's company successfully launched a new rocket targeting lunar orbit.",
+                }
+            ]
         }
     }
 
 
 class PredictionResponse(BaseModel):
-    category:    str   = Field(..., description="Catégorie prédite")
-    confidence:  float = Field(..., description="Score de confiance (0-1)", ge=0, le=1)
-    top3: list  = Field(..., description="Top 3 des catégories avec leurs scores")
-    input_text:  str   = Field(..., description="Texte envoyé au modèle")
-    latency_ms:  float = Field(..., description="Latence de l'inférence en millisecondes")
+    category: str = Field(..., description="Catégorie prédite")
+    confidence: float = Field(..., description="Score de confiance (0-1)", ge=0, le=1)
+    top3: list = Field(..., description="Top 3 des catégories avec leurs scores")
+    input_text: str = Field(..., description="Texte envoyé au modèle")
+    latency_ms: float = Field(
+        ..., description="Latence de l'inférence en millisecondes"
+    )
     model_version: str = Field(..., description="Version du modèle utilisé")
 
 
@@ -189,15 +194,15 @@ class BatchInput(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    status:        str
-    model_loaded:  bool
-    device:        str
-    loaded_at:     Optional[str]
-    n_requests:    int
-    n_errors:      int
+    status: str
+    model_loaded: bool
+    device: str
+    loaded_at: Optional[str]
+    n_requests: int
+    n_errors: int
     avg_latency_ms: float
     model_version: str
-    api_version:   str
+    api_version: str
 
 
 # ─────────────────────────────────────────────────────────────
@@ -206,8 +211,8 @@ class HealthResponse(BaseModel):
 def run_inference(headline: str, short_description: str = "") -> dict:
     """Tokenise et classifie un article. Retourne la prédiction avec les scores."""
     tokenizer = model_state["tokenizer"]
-    model     = model_state["model"]
-    id2label  = model_state["id2label"]
+    model = model_state["model"]
+    id2label = model_state["id2label"]
 
     if model is None:
         raise RuntimeError("Modèle non chargé")
@@ -229,8 +234,8 @@ def run_inference(headline: str, short_description: str = "") -> dict:
     with torch.no_grad():
         logits = model(**enc).logits
 
-    probs     = torch.softmax(logits, dim=-1).squeeze().cpu().numpy()
-    pred_id   = int(np.argmax(probs))
+    probs = torch.softmax(logits, dim=-1).squeeze().cpu().numpy()
+    pred_id = int(np.argmax(probs))
     confidence = float(probs[pred_id])
 
     latency_ms = (time.perf_counter() - t0) * 1000
@@ -243,11 +248,11 @@ def run_inference(headline: str, short_description: str = "") -> dict:
     ]
 
     return {
-        "category":      id2label[pred_id],
-        "confidence":    round(confidence, 4),
-        "top3":          top3,
-        "input_text":    text[:200] + "..." if len(text) > 200 else text,
-        "latency_ms":    round(latency_ms, 2),
+        "category": id2label[pred_id],
+        "confidence": round(confidence, 4),
+        "top3": top3,
+        "input_text": text[:200] + "..." if len(text) > 200 else text,
+        "latency_ms": round(latency_ms, 2),
         "model_version": MODEL_VERSION,
     }
 
@@ -274,6 +279,7 @@ async def track_requests(request: Request, call_next):
 # ENDPOINTS
 # ─────────────────────────────────────────────────────────────
 
+
 @app.get(
     "/health",
     response_model=HealthResponse,
@@ -286,19 +292,17 @@ def health():
     Retourne les métriques de disponibilité et de performance.
     """
     n_req = model_state["n_requests"]
-    avg_latency = (
-        model_state["total_latency_ms"] / n_req if n_req > 0 else 0.0
-    )
+    avg_latency = model_state["total_latency_ms"] / n_req if n_req > 0 else 0.0
     return {
-        "status":         "healthy" if model_state["model"] is not None else "degraded",
-        "model_loaded":   model_state["model"] is not None,
-        "device":         str(DEVICE),
-        "loaded_at":      model_state["loaded_at"],
-        "n_requests":     n_req,
-        "n_errors":       model_state["n_errors"],
+        "status": "healthy" if model_state["model"] is not None else "degraded",
+        "model_loaded": model_state["model"] is not None,
+        "device": str(DEVICE),
+        "loaded_at": model_state["loaded_at"],
+        "n_requests": n_req,
+        "n_errors": model_state["n_errors"],
         "avg_latency_ms": round(avg_latency, 2),
-        "model_version":  MODEL_VERSION,
-        "api_version":    API_VERSION,
+        "model_version": MODEL_VERSION,
+        "api_version": API_VERSION,
     }
 
 
@@ -319,18 +323,18 @@ def get_metrics():
         }
     return {
         "model_performance": {
-            "test_f1_macro":  model_state["metrics"].get("test_f1_macro"),
-            "test_accuracy":  model_state["metrics"].get("test_accuracy"),
-            "best_val_f1":    model_state["metrics"].get("best_val_f1"),
-            "baseline_f1":    model_state["metrics"].get("baseline_f1"),
-            "delta_f1":       model_state["metrics"].get("delta_f1"),
-            "epochs_run":     model_state["metrics"].get("epochs_run"),
-            "num_labels":     model_state["metrics"].get("num_labels"),
-            "class_names":    model_state["metrics"].get("class_names"),
+            "test_f1_macro": model_state["metrics"].get("test_f1_macro"),
+            "test_accuracy": model_state["metrics"].get("test_accuracy"),
+            "best_val_f1": model_state["metrics"].get("best_val_f1"),
+            "baseline_f1": model_state["metrics"].get("baseline_f1"),
+            "delta_f1": model_state["metrics"].get("delta_f1"),
+            "epochs_run": model_state["metrics"].get("epochs_run"),
+            "num_labels": model_state["metrics"].get("num_labels"),
+            "class_names": model_state["metrics"].get("class_names"),
         },
         "api_stats": {
-            "n_requests":    model_state["n_requests"],
-            "n_errors":      model_state["n_errors"],
+            "n_requests": model_state["n_requests"],
+            "n_errors": model_state["n_errors"],
             "avg_latency_ms": round(
                 model_state["total_latency_ms"] / max(model_state["n_requests"], 1), 2
             ),
@@ -381,7 +385,7 @@ def predict_batch(batch: BatchInput):
     Retourne la liste des prédictions dans le même ordre que l'input.
     """
     results = []
-    errors  = []
+    errors = []
 
     for i, article in enumerate(batch.articles):
         try:
@@ -393,10 +397,10 @@ def predict_batch(batch: BatchInput):
             results.append({"index": i, "success": False, "error": str(e)})
 
     return {
-        "n_articles":   len(batch.articles),
-        "n_success":    len([r for r in results if r.get("success")]),
-        "n_errors":     len(errors),
-        "predictions":  results,
+        "n_articles": len(batch.articles),
+        "n_success": len([r for r in results if r.get("success")]),
+        "n_errors": len(errors),
+        "predictions": results,
     }
 
 
@@ -404,11 +408,11 @@ def predict_batch(batch: BatchInput):
 def root():
     """Point d'entrée — redirige vers la documentation."""
     return {
-        "name":        "AI NewsOps — News Classifier API",
-        "version":     API_VERSION,
-        "docs":        "/docs",
-        "health":      "/health",
-        "predict":     "/predict",
+        "name": "AI NewsOps — News Classifier API",
+        "version": API_VERSION,
+        "docs": "/docs",
+        "health": "/health",
+        "predict": "/predict",
         "description": "Classification automatique d'articles de presse (13 catégories)",
-        "model":       "distilbert-base-uncased fine-tuned on HuffPost News Archive",
+        "model": "distilbert-base-uncased fine-tuned on HuffPost News Archive",
     }

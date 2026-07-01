@@ -9,7 +9,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 
-
 TRAIN_PATH = Path("data/processed/train.csv")
 VAL_PATH = Path("data/processed/val.csv")
 MODEL_DIR = Path("models")

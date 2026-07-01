@@ -4,7 +4,6 @@ import joblib
 import pandas as pd
 from sklearn.metrics import classification_report, confusion_matrix
 
-
 TEST_PATH = Path("data/processed/test.csv")
 MODEL_PATH = Path("models/baseline_tfidf_logreg.joblib")
 REPORTS_DIR = Path("reports")
