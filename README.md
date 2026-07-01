@@ -13,18 +13,30 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-success)
 
+🚧 This project is actively evolving toward a production-grade RAG system for media intelligence use cases.
 ---
-
 ## Overview
 
-AI NewsOps Platform is an end-to-end NLP and MLOps project that explores how modern Artificial Intelligence can support **news agencies**, **media monitoring teams** and **editorial workflows**.
+AI NewsOps Platform is an end-to-end NLP + MLOps system for media intelligence.
 
-The platform is designed to ingest large volumes of news articles, classify them, detect duplicates, generate semantic representations, assist journalists through Large Language Models (LLMs), and expose these services through a production-oriented FastAPI backend.
+It is inspired by 20 years of experience in multilingual editorial monitoring and demonstrates how AI can automate classification, retrieval and summarisation of news content.
 
-Although developed as part of the **Architecte Intelligence Artificielle (RNCP)** certification, the project is intentionally structured as a production-grade application following modern MLOps principles.
+Although developed as part of the **Architecte Intelligence Artificielle (RNCP38777)** certification, the project is intentionally structured as a production-grade application following modern MLOps principles.
 
 ---
+## Highlights
 
+- Fine-tuned DistilBERT for news classification (F1: ~0.71)
+- End-to-end NLP pipeline from ingestion to inference API
+- Production-grade FastAPI microservice (Docker-ready)
+- Embedding-based semantic search engine
+- RAG pipeline designed for newsroom assistant use cases
+- Duplicate detection using vector similarity
+- MLflow experiment tracking (20+ runs logged)
+- Reproducible training pipeline with DVC
+- CI/CD automation with GitHub Actions
+
+---
 # Business Context
 
 Newsrooms and media intelligence platforms process thousands of articles every day.

@@ -8,4 +8,4 @@ RUN pip install -r /dependencies/requirements.txt
 COPY . /home/app
 
 # CMD python app.py
-CMD fastapi run app.py
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
