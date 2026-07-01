@@ -1,0 +1,111 @@
+name: CD — Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "models/**"
+      - "Dockerfile"
+      - "requirements.txt"
+  workflow_run:
+    workflows: ["CI — Test & Build"]
+    types: [completed]
+    branches: [main]
+
+env:
+  IMAGE_NAME: newsops-api
+  MODEL_VERSION: "1.0.0"
+
+jobs:
+  deploy:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'push' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image
+        run: |
+          docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest || true
+
+      - name: Deploy — stop old container
+        run: |
+          docker stop newsops-api 2>/dev/null || true
+          docker rm   newsops-api 2>/dev/null || true
+
+      - name: Deploy — start new container
+        run: |
+          docker run -d \
+            --name newsops-api \
+            --restart unless-stopped \
+            -p 8000:8000 \
+            -e MODEL_DIR=/app/models/distilbert/best_model \
+            -e DATA_DIR=/app/data/processed \
+            -e MODEL_VERSION=${{ env.MODEL_VERSION }} \
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Health check post-deploy
+        run: |
+          echo "Attente démarrage API (30s)..."
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Health check échoué (HTTP $STATUS)"
+            docker logs newsops-api
+            exit 1
+          fi
+          echo "✅ API déployée et healthy (HTTP $STATUS)"
+          curl -s http://localhost:8000/health
+
+      - name: Smoke test — /predict
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"headline": "Congress passes new climate bill", "short_description": "Senate votes in favor."}')
+          echo "Réponse : $RESPONSE"
+          CATEGORY=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['category'])")
+          echo "Catégorie prédite : $CATEGORY"
+          if [ -z "$CATEGORY" ]; then
+            echo "❌ Smoke test échoué — pas de catégorie retournée"
+            exit 1
+          fi
+          echo "✅ Smoke test réussi — catégorie : $CATEGORY"
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "🚀 Déploiement réussi !"
+          echo "   Commit  : ${{ github.sha }}"
+          echo "   Branch  : ${{ github.ref_name }}"
+          echo "   Image   : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
+          echo "   API     : http://localhost:8000"
+
+      - name: Rollback si échec
+        if: failure()
+        run: |
+          echo "⚠️  Déploiement échoué — rollback vers version précédente"
+          docker stop newsops-api 2>/dev/null || true
+          docker rm   newsops-api 2>/dev/null || true
+          PREV_IMAGE=$(docker images ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }} \
+            --format "{{.Tag}}" | grep "sha-" | head -2 | tail -1)
+          if [ -n "$PREV_IMAGE" ]; then
+            docker run -d \
+              --name newsops-api \
+              --restart unless-stopped \
+              -p 8000:8000 \
+              -e MODEL_DIR=/app/models/distilbert/best_model \
+              -e DATA_DIR=/app/data/processed \
+              ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:sha-${PREV_IMAGE}
+            echo "✅ Rollback vers sha-${PREV_IMAGE}"
+          else
+            echo "❌ Pas de version précédente disponible pour le rollback"
+          fi
