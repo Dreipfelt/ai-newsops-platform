@@ -17,7 +17,7 @@ import pandas as pd
 import numpy as np
 
 # FastAPI
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
@@ -61,11 +61,20 @@ DRIFT_LOGS_PATH = Path("monitoring/drift_logs.json")
 REFERENCE_DATA_PATH = DATA_DIR / "test.parquet"
 
 # ============================================================
-# Pydantic Models
+# Pydantic Models avec descriptions
 # ============================================================
 class PredictRequest(BaseModel):
-    headline: str = Field(..., min_length=3, max_length=500)
-    short_description: Optional[str] = Field(None, max_length=1000)
+    headline: str = Field(
+        ...,
+        min_length=3,
+        max_length=500,
+        description="Le titre de l'article (obligatoire, 3 à 500 caractères)."
+    )
+    short_description: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Courte description de l'article (optionnelle, max 1000 caractères)."
+    )
 
     def get_text(self) -> str:
         if self.short_description:
@@ -73,12 +82,12 @@ class PredictRequest(BaseModel):
         return self.headline
 
 class PredictResponse(BaseModel):
-    category: str
-    confidence: float
-    top3: List[tuple]
+    category: str = Field(..., description="Catégorie prédite.")
+    confidence: float = Field(..., description="Score de confiance (0 à 1).")
+    top3: List[tuple] = Field(..., description="Top 3 des catégories avec leurs scores.")
 
 class BatchPredictRequest(BaseModel):
-    articles: List[PredictRequest]
+    articles: List[PredictRequest] = Field(..., description="Liste des articles à classer (max 100).")
 
 class BatchPredictResponse(BaseModel):
     predictions: List[PredictResponse]
@@ -109,9 +118,8 @@ class ModelMonitor:
         if path.exists():
             try:
                 df = pd.read_parquet(path)
-                sample_size = min(500, len(df))  # Réduit pour éviter les problèmes
+                sample_size = min(500, len(df))
                 self.reference_data = df.sample(n=sample_size, random_state=42)
-                # Ajouter une colonne prediction si elle n'existe pas
                 if "prediction" not in self.reference_data.columns:
                     self.reference_data["prediction"] = np.random.randint(0, 13, len(self.reference_data))
                 log.info(f"✅ Référence chargée: {len(self.reference_data)} exemples")
@@ -122,7 +130,6 @@ class ModelMonitor:
             log.warning(f"⚠️ Fichier de référence non trouvé: {path}")
 
     def _load_drift_logs(self):
-        """Charge les logs de drift existants"""
         if DRIFT_LOGS_PATH.exists():
             try:
                 with open(DRIFT_LOGS_PATH) as f:
@@ -136,7 +143,6 @@ class ModelMonitor:
             self.drift_logs = []
 
     def _save_drift_logs(self):
-        """Sauvegarde les logs de drift"""
         try:
             with open(DRIFT_LOGS_PATH, "w") as f:
                 json.dump(self.drift_logs, f, indent=2)
@@ -144,7 +150,6 @@ class ModelMonitor:
             log.error(f"Erreur sauvegarde logs: {e}")
 
     def detect_drift(self, current_data, threshold=0.3):
-        """Détecte la dérive entre les données de référence et les données courantes"""
         if self.reference_data is None:
             return {"error": "No reference data available", "drift_detected": False}, None
 
@@ -157,7 +162,6 @@ class ModelMonitor:
             }, None
 
         try:
-            # Convertir en DataFrame
             if isinstance(current_data, dict):
                 current_df = pd.DataFrame([current_data])
             elif isinstance(current_data, list):
@@ -167,15 +171,11 @@ class ModelMonitor:
             else:
                 return {"error": "Format de données non supporté"}, None
 
-            # Ajouter une colonne de prédiction si elle n'existe pas
             if "prediction" not in current_df.columns:
                 current_df["prediction"] = np.random.randint(0, 13, len(current_df))
-
-            # S'assurer que la référence a aussi une colonne prediction
             if "prediction" not in self.reference_data.columns:
                 self.reference_data["prediction"] = np.random.randint(0, 13, len(self.reference_data))
 
-            # Configurer le mapping
             column_mapping = ColumnMapping(
                 prediction="prediction",
                 target="label" if "label" in current_df.columns else None,
@@ -184,7 +184,6 @@ class ModelMonitor:
                 text_features=["text"] if "text" in current_df.columns else [],
             )
 
-            # Générer le rapport
             report = Report(metrics=[DataDriftPreset()])
             report.run(
                 reference_data=self.reference_data,
@@ -192,7 +191,6 @@ class ModelMonitor:
                 column_mapping=column_mapping,
             )
 
-            # Extraire les métriques
             drift_metrics = report.as_dict()
             drift_detected = False
             drift_score = 0.0
@@ -220,12 +218,10 @@ class ModelMonitor:
 
             self.drift_logs.append(result)
             self._save_drift_logs()
-
             return result, report
 
         except Exception as e:
             log.error(f"Erreur détection drift: {e}")
-            # Retourner un résultat sans échec pour ne pas bloquer l'API
             return {
                 "drift_detected": False,
                 "drift_score": 0.0,
@@ -236,11 +232,9 @@ class ModelMonitor:
             }, None
 
     def get_recent_drifts(self, limit=10):
-        """Récupère les derniers logs de drift"""
         return self.drift_logs[-limit:] if self.drift_logs else []
 
     def get_drift_summary(self):
-        """Résumé des dérives récentes"""
         if not self.drift_logs:
             return {"total": 0, "recent_drifts": 0, "last_drift": None}
 
@@ -264,7 +258,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -306,9 +299,7 @@ label2id = None
 monitor = None
 
 def load_model_and_tokenizer():
-    """Charge le modèle et le tokenizer"""
     global tokenizer, model, id2label, label2id
-
     try:
         log.info(f"🚀 Chargement du modèle depuis {MODEL_DIR}")
         tokenizer = DistilBertTokenizerFast.from_pretrained(str(MODEL_DIR))
@@ -316,13 +307,11 @@ def load_model_and_tokenizer():
         model.to(DEVICE)
         model.eval()
 
-        # Utiliser le mapping du modèle (prioritaire)
         if hasattr(model.config, 'id2label') and model.config.id2label:
             id2label = {int(k): v for k, v in model.config.id2label.items()}
             label2id = {v: k for k, v in id2label.items()}
             log.info(f"✅ Mapping depuis le modèle: {len(id2label)} classes")
         else:
-            # Fallback sur le fichier label_mapping.json
             label_mapping_path = DATA_DIR / "label_mapping.json"
             if label_mapping_path.exists():
                 with open(label_mapping_path) as f:
@@ -331,20 +320,17 @@ def load_model_and_tokenizer():
                     label2id = {v: k for k, v in id2label.items()}
                 log.info(f"✅ Mapping depuis label_mapping.json: {len(id2label)} classes")
             else:
-                # Mapping par défaut
                 id2label = {0: "POLITICS", 1: "SPORTS", 2: "ENTERTAINMENT", 3: "TECH", 4: "HEALTH"}
                 label2id = {v: k for k, v in id2label.items()}
                 log.warning(f"⚠️ Mapping par défaut: {len(id2label)} classes")
 
         log.info(f"✅ Modèle chargé sur {DEVICE} avec {len(id2label)} classes: {list(id2label.values())}")
         return True
-
     except Exception as e:
         log.error(f"❌ Erreur chargement modèle: {e}")
         return False
 
 def load_monitor():
-    """Charge le moniteur de drift"""
     global monitor
     monitor = ModelMonitor()
     log.info("✅ Moniteur de drift initialisé")
@@ -352,20 +338,23 @@ def load_monitor():
 
 
 # ============================================================
-# Routes API
+# Routes API (avec documentation Swagger enrichie)
 # ============================================================
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialisation au démarrage"""
     log.info("🚀 Démarrage de l'API NewsOps...")
     load_model_and_tokenizer()
     load_monitor()
 
 
-@app.get("/")
+@app.get(
+    "/",
+    summary="Informations générales",
+    description="Retourne les métadonnées de l'API et son état.",
+    tags=["Informations"]
+)
 async def root():
-    """Racine de l'API"""
     return {
         "name": "AI NewsOps Platform API",
         "version": "1.0.0",
@@ -380,9 +369,29 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    summary="Vérifier la santé du service",
+    description="Retourne l'état de l'API, du modèle et du moniteur.",
+    tags=["Monitoring"],
+    responses={
+        200: {
+            "description": "Service en bonne santé",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "ok",
+                        "model_loaded": True,
+                        "device": "cpu",
+                        "tokenizer_loaded": True,
+                        "monitor_initialized": True
+                    }
+                }
+            }
+        }
+    }
+)
 async def health_check():
-    """Vérifie la santé du service"""
     return {
         "status": "ok",
         "model_loaded": model is not None,
@@ -392,10 +401,13 @@ async def health_check():
     }
 
 
-@app.get("/metrics")
+@app.get(
+    "/metrics",
+    summary="Exposer les métriques Prometheus",
+    description="Endpoint pour Prometheus. Retourne les métriques au format texte.",
+    tags=["Monitoring"]
+)
 async def metrics_endpoint():
-    """Endpoint Prometheus pour les métriques"""
-    # Mettre à jour les métriques du modèle
     if model is not None:
         try:
             metrics_path = MODEL_DIR.parent / "training_metrics.json"
@@ -407,7 +419,6 @@ async def metrics_endpoint():
         except Exception as e:
             log.error(f"Erreur mise à jour métriques: {e}")
 
-    # Mettre à jour le drift score
     if monitor and monitor.drift_logs:
         last_drift = monitor.drift_logs[-1]
         DRIFT_SCORE.set(last_drift.get("drift_score", 0))
@@ -415,9 +426,30 @@ async def metrics_endpoint():
     return PlainTextResponse(generate_latest())
 
 
-@app.post("/predict", response_model=PredictResponse)
+@app.post(
+    "/predict",
+    response_model=PredictResponse,
+    summary="Prédire la catégorie d'un article",
+    description="Analyse un article (titre + description facultative) et retourne la catégorie la plus probable avec le top 3.",
+    tags=["Prédiction"],
+    responses={
+        200: {
+            "description": "Prédiction réussie",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "category": "POLITICS",
+                        "confidence": 0.89,
+                        "top3": [["POLITICS", 0.89], ["OTHER", 0.07], ["BUSINESS", 0.04]]
+                    }
+                }
+            }
+        },
+        422: {"description": "Erreur de validation (ex: headline trop court)"},
+        503: {"description": "Modèle non chargé"}
+    }
+)
 async def predict(request: PredictRequest):
-    """Prédit la catégorie d'un article de news"""
     if model is None or tokenizer is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
@@ -437,34 +469,35 @@ async def predict(request: PredictRequest):
             probs = torch.softmax(outputs.logits, dim=-1)
             top_probs, top_indices = torch.topk(probs, k=3)
 
-        # Convertir correctement les valeurs
         top_idx = top_indices[0][0].item()
         top_confidence = top_probs[0][0].item()
-        
         category = id2label.get(top_idx, "unknown")
         confidence = top_confidence
-        
-        # Top 3
         top3 = []
         for i in range(3):
             idx = top_indices[0][i].item()
             prob = top_probs[0][i].item()
             top3.append((id2label.get(idx, "unknown"), prob))
 
-        return PredictResponse(
-            category=category,
-            confidence=confidence,
-            top3=top3
-        )
-
+        return PredictResponse(category=category, confidence=confidence, top3=top3)
     except Exception as e:
         log.error(f"Erreur prédiction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/predict/batch", response_model=BatchPredictResponse)
+@app.post(
+    "/predict/batch",
+    response_model=BatchPredictResponse,
+    summary="Prédire plusieurs articles en lot",
+    description="Classifie jusqu'à 100 articles en une seule requête.",
+    tags=["Prédiction"],
+    responses={
+        200: {"description": "Prédictions réussies"},
+        422: {"description": "Plus de 100 articles ou erreur de validation"},
+        503: {"description": "Modèle non chargé"}
+    }
+)
 async def predict_batch(request: BatchPredictRequest):
-    """Prédit les catégories de plusieurs articles"""
     if model is None or tokenizer is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
@@ -477,7 +510,6 @@ async def predict_batch(request: BatchPredictRequest):
             result = await predict(article)
             predictions.append(result)
         return BatchPredictResponse(predictions=predictions)
-
     except Exception as e:
         log.error(f"Erreur batch: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -487,9 +519,17 @@ async def predict_batch(request: BatchPredictRequest):
 # Monitoring routes
 # ============================================================
 
-@app.get("/monitoring/drift")
+@app.get(
+    "/monitoring/drift",
+    summary="Vérifier la dérive du modèle",
+    description="Compare les données récentes à la référence et détecte une éventuelle dérive (data drift).",
+    tags=["Monitoring"],
+    responses={
+        200: {"description": "Rapport de dérive généré"},
+        500: {"description": "Erreur interne"}
+    }
+)
 async def get_drift_status():
-    """Vérifie la dérive actuelle du modèle"""
     if monitor is None:
         return {
             "status": "error",
@@ -505,7 +545,6 @@ async def get_drift_status():
             )
             result, report = monitor.detect_drift(current_sample)
 
-            # Mettre à jour les métriques Prometheus
             DRIFT_SCORE.set(result.get("drift_score", 0.0))
 
             if "error" in result:
@@ -526,7 +565,6 @@ async def get_drift_status():
                 "message": "Données de référence non disponibles",
                 "drift": None
             }
-
     except Exception as e:
         log.error(f"Erreur drift: {e}")
         return {
@@ -536,9 +574,16 @@ async def get_drift_status():
         }
 
 
-@app.get("/monitoring/drift/logs")
+@app.get(
+    "/monitoring/drift/logs",
+    summary="Historique des dérives",
+    description="Récupère les derniers logs de détection de dérive.",
+    tags=["Monitoring"],
+    responses={
+        200: {"description": "Liste des logs"}
+    }
+)
 async def get_drift_logs(limit: int = 10):
-    """Récupère les derniers logs de drift"""
     if monitor is None:
         return {"status": "error", "message": "Moniteur non initialisé", "logs": []}
 
@@ -555,9 +600,16 @@ async def get_drift_logs(limit: int = 10):
         return {"status": "error", "message": str(e), "logs": []}
 
 
-@app.get("/monitoring/health")
+@app.get(
+    "/monitoring/health",
+    summary="Santé du système de monitoring",
+    description="Vérifie que le moniteur et les données de référence sont disponibles.",
+    tags=["Monitoring"],
+    responses={
+        200: {"description": "État du monitoring"}
+    }
+)
 async def monitoring_health():
-    """Vérifie la santé du système de monitoring"""
     if monitor is None:
         return {
             "status": "error",
