@@ -11,7 +11,6 @@ env:
   IMAGE_NAME: newsops-api
 
 jobs:
-  # ── Job 1 : Qualité du code ──────────────────────────────────
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
@@ -33,7 +32,6 @@ jobs:
       - name: Black format check
         run: black --check src/
 
-  # ── Job 2 : Tests unitaires ──────────────────────────────────
   test:
     name: Tests unitaires
     runs-on: ubuntu-latest
@@ -47,11 +45,43 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
+      - name: Cache Hugging Face models
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/huggingface
+          key: ${{ runner.os }}-huggingface-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-huggingface-
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pytest pytest-cov httpx
+          pip install -r requirements.txt
+          pip install pytest pytest-cov httpx pytest-asyncio
           pip install fastapi uvicorn pydantic transformers torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pandas numpy scikit-learn mlflow dvc evidently
+
+      - name: Create minimal test data
+        run: |
+          mkdir -p data/processed
+          echo '{"0": "POLITICS", "1": "SPORTS", "2": "ENTERTAINMENT", "3": "TECH", "4": "HEALTH"}' > data/processed/label_mapping.json
+          python -c "
+          import pandas as pd
+          import numpy as np
+          np.random.seed(42)
+          categories = ['POLITICS', 'SPORTS', 'ENTERTAINMENT', 'TECH', 'HEALTH']
+          texts = ['Test article ' + str(i) for i in range(100)]
+          labels = np.random.randint(0, 5, 100)
+          df = pd.DataFrame({
+              'text': texts,
+              'label': labels,
+              'category': [categories[l] for l in labels]
+          })
+          df.to_parquet('data/processed/train.parquet')
+          df.to_parquet('data/processed/val.parquet')
+          df.to_parquet('data/processed/test.parquet')
+          "
+          ls -la data/processed/
 
       - name: Run tests avec coverage
         run: |
@@ -67,8 +97,8 @@ jobs:
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ── Job 3 : Build Docker ─────────────────────────────────────
   build:
     name: Build Docker image
     runs-on: ubuntu-latest
