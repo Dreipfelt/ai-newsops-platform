@@ -7,6 +7,7 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs: {}
+
 env:
   IMAGE_NAME: newsops-api
 
@@ -14,10 +15,16 @@ jobs:
   deploy:
     name: Deploy API
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # ✅ On vérifie si c'est un succès (automatique) OU un déclenchement manuel
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # ✅ Récupère le bon commit pour un déclenchement manuel
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -75,7 +82,7 @@ jobs:
         if: success()
         run: |
           echo "🚀 Déploiement réussi !"
-          echo "   Commit  : ${{ github.event.workflow_run.head_sha }}"
+          echo "   Commit  : ${{ github.event.workflow_run.head_sha || github.sha }}"
           echo "   Image   : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
 
       - name: Rollback si échec
@@ -83,3 +90,4 @@ jobs:
         run: |
           echo "⚠️ Déploiement échoué"
           docker logs newsops-api
+          exit 1
