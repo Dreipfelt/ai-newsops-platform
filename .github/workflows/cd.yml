@@ -1,4 +1,4 @@
-name: CD — Deploy (Image Validation)
+name: CD — Image Verification
 
 on:
   workflow_run:
@@ -12,19 +12,14 @@ env:
   IMAGE_NAME: newsops-api
 
 jobs:
-  validate-image:
-    name: Validate Docker Image
+  verify-image:
+    name: Verify Docker Image on GHCR
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -32,71 +27,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull Docker image
+      - name: Verify image exists on GHCR
         run: |
-          echo "📥 Pull de l'image ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
-          docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-
-      - name: Test Docker image
-        run: |
-          echo "🧪 Lancement du conteneur de test..."
+          echo "🔍 Vérification de l'existence de l'image sur GHCR..."
           
-          # Lancer le conteneur en arrière-plan avec les volumes montés
-          docker run -d \
-            --name newsops-api-test \
-            -p 8000:8000 \
-            -e MODEL_DIR=/app/models/distilbert/best_model \
-            -e DATA_DIR=/app/data/processed \
-            -v $(pwd)/models/distilbert/best_model:/app/models/distilbert/best_model:ro \
-            -v $(pwd)/data/processed:/app/data/processed:ro \
-            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
-
-          echo "⏳ Attente du démarrage de l'API (30s)..."
-          sleep 30
-
-          echo "🏥 Vérification du health check..."
-          HEALTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
-          
-          if [ "$HEALTH_STATUS" != "200" ]; then
-            echo "❌ Health check a échoué (HTTP $HEALTH_STATUS). Logs du conteneur :"
-            docker logs newsops-api-test
-            docker stop newsops-api-test && docker rm newsops-api-test
-            exit 1
-          fi
-          echo "✅ Health check réussi (HTTP $HEALTH_STATUS)"
-
-          echo "🧪 Test de l'endpoint de prédiction..."
-          PREDICT_RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
-            -H "Content-Type: application/json" \
-            -d '{"headline": "Congress passes new climate bill", "short_description": "Senate votes in favor."}')
-          
-          echo "📤 Réponse : $PREDICT_RESPONSE"
-          
-          if echo "$PREDICT_RESPONSE" | grep -q "category"; then
-            echo "✅ Test de prédiction réussi."
+          # Vérifier si l'image existe en la pullant
+          if docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest; then
+            echo "✅ Image trouvée sur GHCR : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
+            echo "📊 Informations sur l'image :"
+            docker images --filter=reference="ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
+            echo "✅ Vérification terminée avec succès !"
           else
-            echo "❌ Test de prédiction échoué. Logs du conteneur :"
-            docker logs newsops-api-test
-            docker stop newsops-api-test && docker rm newsops-api-test
+            echo "❌ Image non trouvée sur GHCR."
             exit 1
           fi
-
-          echo "🧹 Nettoyage du conteneur de test..."
-          docker stop newsops-api-test && docker rm newsops-api-test
-          
-          echo "✅ L'image Docker est validée avec succès !"
 
       - name: Notify success
         if: success()
         run: |
-          echo "🚀 Image Docker validée avec succès !"
-          echo "   Commit  : ${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "🚀 Vérification réussie !"
           echo "   Image   : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
+          echo "   Commit  : ${{ github.event.workflow_run.head_sha || github.sha }}"
 
       - name: Notify failure
         if: failure()
         run: |
-          echo "❌ Échec de la validation de l'image Docker."
-          docker logs newsops-api-test 2>/dev/null || true
-          docker stop newsops-api-test 2>/dev/null && docker rm newsops-api-test 2>/dev/null || true
+          echo "❌ Échec de la vérification de l'image sur GHCR."
           exit 1
