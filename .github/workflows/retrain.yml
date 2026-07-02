@@ -1,0 +1,58 @@
+name: Retraining Pipeline
+
+on:
+  schedule:
+    # Exécution quotidienne à 2h du matin
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Forcer le retraining'
+        type: boolean
+        default: false
+
+jobs:
+  retrain:
+    name: Retrain Model
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '0 2 * * *'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pandas numpy scikit-learn transformers torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Check drift
+        run: |
+          python src/retrain_trigger.py
+        env:
+          DRIFT_THRESHOLD: 0.3
+
+      - name: Run retraining if needed
+        run: |
+          python src/retrain.py --force ${{ github.event.inputs.force == 'true' }}
+        env:
+          MLFLOW_TRACKING_URI: http://localhost:5000
+
+      - name: Compare and promote model
+        run: |
+          python src/register_model.py
+        env:
+          MLFLOW_TRACKING_URI: http://localhost:5000
+
+      - name: Notify success
+        if: success()
+        run: echo "✅ Retraining completed successfully"
+
+      - name: Notify failure
+        if: failure()
+        run: echo "❌ Retraining failed"
