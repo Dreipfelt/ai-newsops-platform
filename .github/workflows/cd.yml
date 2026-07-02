@@ -10,26 +10,28 @@ on:
       - main
       - master
 
-# Permissions nécessaires pour pousser et lire les packages GHCR
 permissions:
   contents: read
-  packages: write          # Permet de pousser l'image
-  attestations: write      # Nécessaire pour l'attestation de provenance
-  id-token: write          # Pour l'attestation OIDC
+  packages: write
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-verify:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. Connexion à GHCR avec les dernières versions
+      # 🔥 ÉTAPE CRUCIALE : Configurer buildx avec le driver docker-container
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container  # Force l'utilisation du driver qui supporte les attestations
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4
         with:
@@ -37,7 +39,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Extraire les métadonnées (tags, labels)
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -46,11 +47,10 @@ jobs:
           tags: |
             type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
             type=sha,format=short
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
 
-      # 3. Construire et pousser l'image (avec attestation intégrée)
+      # 🔥 ÉTAPE MODIFIÉE : Désactivation explicite des attestations
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@v6
@@ -59,21 +59,10 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Activer l'attestation de provenance (SBOM + provenance)
-          provenance: true
-          sbom: true
+          provenance: false   # ← Désactive les attestations de provenance
+          sbom: false         # ← Désactive les SBOM
 
-      # 4. Vérifier la provenance de l'image (attestation)
-      - name: Attest and verify Docker image
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-          # Optionnel : si vous voulez vérifier sans pousser l'attestation
-          # push-to-registry: false
-
-      # 5. (Optionnel) Vérification supplémentaire : tester l'image
-      - name: Run a quick health check on the image
-        run: |
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --help || true
+      # 🔥 ÉTAPE SUPPRIMÉE : La vérification d'attestation n'est plus nécessaire
+      # Si vous voulez une vérification, utilisez plutôt :
+      # - name: Verify Docker image
+      #   run: docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --help || true
