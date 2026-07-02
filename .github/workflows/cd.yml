@@ -5,7 +5,8 @@ on:
     workflows: ["CI — Test & Build"]
     types: [completed]
     branches: [main]
-
+  workflow_dispatch:
+    inputs: {}
 env:
   IMAGE_NAME: newsops-api
 
