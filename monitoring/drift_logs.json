@@ -1,0 +1,12 @@
+[
+  {
+    "timestamp": "2026-07-02T14:24:59.884355",
+    "drift_detected": false,
+    "significant_drift": false,
+    "drift_score": 0.0,
+    "drift_ratio": 0.0,
+    "threshold": 0.3,
+    "n_reference": 100,
+    "n_current": 50
+  }
+]

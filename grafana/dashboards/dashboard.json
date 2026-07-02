@@ -1,0 +1,61 @@
+{
+  "title": "NewsOps Monitoring",
+  "uid": "newsops",
+  "panels": [
+    {
+      "title": "Drift Score",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "model_drift_score",
+          "legendFormat": "Drift Score"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.3},
+              {"color": "red", "value": 0.6}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Request Rate",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(http_requests_total[5m])",
+          "legendFormat": "{{method}} {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "title": "Request Latency",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+          "legendFormat": "{{method}} {{endpoint}}"
+        }
+      ]
+    },
+    {
+      "title": "Recent Drifts",
+      "type": "table",
+      "targets": [
+        {
+          "expr": "model_drift_score",
+          "format": "table"
+        }
+      ]
+    }
+  ]
+}

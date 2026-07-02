@@ -1,8 +1,8 @@
-version: "3.9"
+version: "3.8"
 
 # ─────────────────────────────────────────────────────────────
 # AI NewsOps Platform — Docker Compose
-# Services : API FastAPI + MLflow UI
+# Services : API FastAPI + MLflow UI + Prometheus + Grafana
 # Usage    : docker-compose up --build
 # ─────────────────────────────────────────────────────────────
 
@@ -22,10 +22,12 @@ services:
       - MAX_LENGTH=128
       - MODEL_VERSION=1.0.0
     volumes:
-      # Monte les artifacts en read-only — pas besoin de rebuild si le modèle change
+      # Monte les artifacts en read-only
       - ./models/distilbert/best_model:/app/models/distilbert/best_model:ro
       - ./models/distilbert/training_metrics.json:/app/models/distilbert/training_metrics.json:ro
       - ./data/processed/label_mapping.json:/app/data/processed/label_mapping.json:ro
+      # Dossier de monitoring pour les logs de drift
+      - ./monitoring:/app/monitoring
       # Logs persistants
       - ./logs:/app/logs
     restart: unless-stopped
@@ -39,6 +41,8 @@ services:
     depends_on:
       mlflow:
         condition: service_healthy
+    networks:
+      - monitoring-network
 
   # ── MLflow UI ────────────────────────────────────────────────
   mlflow:
@@ -58,12 +62,82 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000')"]
       interval: 30s
       timeout: 15s
       retries: 5
       start_period: 90s
+    networks:
+      - monitoring-network
+
+  # ── Prometheus ───────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: newsops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+    depends_on:
+      - api
+
+  # ── Grafana ──────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: newsops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+    depends_on:
+      - prometheus
+
+  # ── Node Exporter ────────────────────────────────────────────
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: newsops-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
+    restart: unless-stopped
+    networks:
+      - monitoring-network
+
+networks:
+  monitoring-network:
+    driver: bridge
 
 volumes:
   mlruns:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
