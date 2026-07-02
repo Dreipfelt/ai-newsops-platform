@@ -114,7 +114,6 @@ class ModelMonitor:
         self._load_drift_logs()
 
     def _load_reference_data(self, path):
-        """Charge les données de référence pour la détection de drift"""
         if path.exists():
             try:
                 df = pd.read_parquet(path)
@@ -290,7 +289,7 @@ async def prometheus_middleware(request: Request, call_next):
 
 
 # ============================================================
-# Chargement du modèle et du tokenizer
+# Chargement du modèle et du tokenizer (lazy loading)
 # ============================================================
 tokenizer = None
 model = None
@@ -336,17 +335,18 @@ def load_monitor():
     log.info("✅ Moniteur de drift initialisé")
     return monitor
 
+def ensure_model_loaded():
+    """Charge le modèle et le moniteur si ce n'est pas déjà fait."""
+    global tokenizer, model, id2label, label2id, monitor
+    if model is None:
+        load_model_and_tokenizer()
+    if monitor is None:
+        load_monitor()
+
 
 # ============================================================
 # Routes API (avec documentation Swagger enrichie)
 # ============================================================
-
-@app.on_event("startup")
-async def startup_event():
-    log.info("🚀 Démarrage de l'API NewsOps...")
-    load_model_and_tokenizer()
-    load_monitor()
-
 
 @app.get(
     "/",
@@ -355,6 +355,7 @@ async def startup_event():
     tags=["Informations"]
 )
 async def root():
+    ensure_model_loaded()  # charge si nécessaire
     return {
         "name": "AI NewsOps Platform API",
         "version": "1.0.0",
@@ -392,6 +393,7 @@ async def root():
     }
 )
 async def health_check():
+    ensure_model_loaded()
     return {
         "status": "ok",
         "model_loaded": model is not None,
@@ -408,6 +410,8 @@ async def health_check():
     tags=["Monitoring"]
 )
 async def metrics_endpoint():
+    # On charge le modèle pour avoir les métriques, mais si échec on renvoie 0
+    ensure_model_loaded()
     if model is not None:
         try:
             metrics_path = MODEL_DIR.parent / "training_metrics.json"
@@ -450,6 +454,7 @@ async def metrics_endpoint():
     }
 )
 async def predict(request: PredictRequest):
+    ensure_model_loaded()
     if model is None or tokenizer is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
@@ -498,6 +503,7 @@ async def predict(request: PredictRequest):
     }
 )
 async def predict_batch(request: BatchPredictRequest):
+    ensure_model_loaded()
     if model is None or tokenizer is None:
         raise HTTPException(status_code=503, detail="Modèle non chargé")
 
@@ -530,6 +536,7 @@ async def predict_batch(request: BatchPredictRequest):
     }
 )
 async def get_drift_status():
+    ensure_model_loaded()
     if monitor is None:
         return {
             "status": "error",
@@ -584,6 +591,7 @@ async def get_drift_status():
     }
 )
 async def get_drift_logs(limit: int = 10):
+    ensure_model_loaded()
     if monitor is None:
         return {"status": "error", "message": "Moniteur non initialisé", "logs": []}
 
@@ -610,6 +618,7 @@ async def get_drift_logs(limit: int = 10):
     }
 )
 async def monitoring_health():
+    ensure_model_loaded()
     if monitor is None:
         return {
             "status": "error",

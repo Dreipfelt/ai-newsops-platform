@@ -41,3 +41,6 @@ ZZZZ_Crap
 models/distilbert/checkpoints/
 .coverage
 models/distilbert/checkpoints/
+dashboard_env/
+docker-compose.yml.bak
+dashboard/streamlit_app.py
