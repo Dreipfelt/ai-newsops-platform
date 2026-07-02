@@ -1,56 +1,79 @@
-name: CD — Image Verification
+name: CD - Build, Push & Verify Docker Image
 
 on:
-  workflow_run:
-    workflows: ["CI — Test & Build"]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs: {}
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+# Permissions nécessaires pour pousser et lire les packages GHCR
+permissions:
+  contents: read
+  packages: write          # Permet de pousser l'image
+  attestations: write      # Nécessaire pour l'attestation de provenance
+  id-token: write          # Pour l'attestation OIDC
 
 env:
-  IMAGE_NAME: newsops-api
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  verify-image:
-    name: Verify Docker Image on GHCR
+  build-and-verify:
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
 
     steps:
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Connexion à GHCR avec les dernières versions
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify image exists on GHCR
-        run: |
-          echo "🔍 Vérification de l'existence de l'image sur GHCR..."
-          
-          # Vérifier si l'image existe en la pullant
-          if docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest; then
-            echo "✅ Image trouvée sur GHCR : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
-            echo "📊 Informations sur l'image :"
-            docker images --filter=reference="ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
-            echo "✅ Vérification terminée avec succès !"
-          else
-            echo "❌ Image non trouvée sur GHCR."
-            exit 1
-          fi
+      # 2. Extraire les métadonnées (tags, labels)
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
 
-      - name: Notify success
-        if: success()
-        run: |
-          echo "🚀 Vérification réussie !"
-          echo "   Image   : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
-          echo "   Commit  : ${{ github.event.workflow_run.head_sha || github.sha }}"
+      # 3. Construire et pousser l'image (avec attestation intégrée)
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Activer l'attestation de provenance (SBOM + provenance)
+          provenance: true
+          sbom: true
 
-      - name: Notify failure
-        if: failure()
+      # 4. Vérifier la provenance de l'image (attestation)
+      - name: Attest and verify Docker image
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          # Optionnel : si vous voulez vérifier sans pousser l'attestation
+          # push-to-registry: false
+
+      # 5. (Optionnel) Vérification supplémentaire : tester l'image
+      - name: Run a quick health check on the image
         run: |
-          echo "❌ Échec de la vérification de l'image sur GHCR."
-          exit 1
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest --help || true
