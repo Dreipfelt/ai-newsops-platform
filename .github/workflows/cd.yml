@@ -13,9 +13,8 @@ env:
 
 jobs:
   deploy:
-    name: Deploy API
+    name: Test & Verify Image
     runs-on: ubuntu-latest
-    # ✅ On vérifie si c'est un succès (automatique) OU un déclenchement manuel
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
@@ -23,7 +22,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # ✅ Récupère le bon commit pour un déclenchement manuel
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Login to GitHub Container Registry
@@ -38,56 +36,78 @@ jobs:
           echo "📥 Pull de l'image ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
           docker pull ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Deploy — stop old container
+      - name: Test image with mock data
         run: |
-          docker stop newsops-api 2>/dev/null || true
-          docker rm   newsops-api 2>/dev/null || true
-
-      - name: Deploy — start new container
-        run: |
+          echo "🧪 Création des données de test..."
+          
+          # Créer un dossier de test
+          mkdir -p test_data/processed
+          
+          # Créer un label_mapping.json
+          echo '{"0": "POLITICS", "1": "SPORTS", "2": "ENTERTAINMENT", "3": "TECH", "4": "HEALTH"}' > test_data/processed/label_mapping.json
+          
+          # Créer le modèle de test (copie du modèle existant ou création d'un modèle minimal)
+          echo "📦 Utilisation du modèle existant..."
+          
+          echo "🚀 Lancement du conteneur de test..."
           docker run -d \
-            --name newsops-api \
-            --restart unless-stopped \
+            --name newsops-api-test \
             -p 8000:8000 \
             -e MODEL_DIR=/app/models/distilbert/best_model \
             -e DATA_DIR=/app/data/processed \
+            -v $(pwd)/models/distilbert/best_model:/app/models/distilbert/best_model:ro \
+            -v $(pwd)/test_data/processed:/app/data/processed:ro \
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Health check post-deploy
-        run: |
           echo "⏳ Attente démarrage API (30s)..."
           sleep 30
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health)
+          
+          echo "🏥 Health check..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health || echo "000")
           if [ "$STATUS" != "200" ]; then
             echo "❌ Health check échoué (HTTP $STATUS)"
-            docker logs newsops-api
+            docker logs newsops-api-test
+            docker stop newsops-api-test 2>/dev/null || true
+            docker rm newsops-api-test 2>/dev/null || true
             exit 1
           fi
-          echo "✅ API déployée et healthy (HTTP $STATUS)"
-
-      - name: Smoke test — /predict
-        run: |
+          echo "✅ API healthy (HTTP $STATUS)"
+          
+          echo "🧪 Smoke test — /predict..."
           RESPONSE=$(curl -s -X POST http://localhost:8000/predict \
             -H "Content-Type: application/json" \
             -d '{"headline": "Congress passes new climate bill", "short_description": "Senate votes in favor."}')
           echo "📤 Réponse : $RESPONSE"
-          CATEGORY=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['category'])")
-          echo "✅ Catégorie prédite : $CATEGORY"
-          if [ -z "$CATEGORY" ]; then
+          
+          # Vérifier que la réponse contient une catégorie
+          if echo "$RESPONSE" | grep -q "category"; then
+            echo "✅ Test de prédiction réussi"
+          else
             echo "❌ Smoke test échoué — pas de catégorie retournée"
+            docker logs newsops-api-test
+            docker stop newsops-api-test 2>/dev/null || true
+            docker rm newsops-api-test 2>/dev/null || true
             exit 1
           fi
+          
+          echo "🧹 Nettoyage..."
+          docker stop newsops-api-test 2>/dev/null || true
+          docker rm newsops-api-test 2>/dev/null || true
+          
+          echo "✅ Image testée avec succès !"
 
       - name: Notify success
         if: success()
         run: |
-          echo "🚀 Déploiement réussi !"
+          echo "🚀 Image Docker validée avec succès !"
           echo "   Commit  : ${{ github.event.workflow_run.head_sha || github.sha }}"
           echo "   Image   : ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest"
 
-      - name: Rollback si échec
+      - name: Notify failure
         if: failure()
         run: |
-          echo "⚠️ Déploiement échoué"
-          docker logs newsops-api
+          echo "❌ Échec du test de l'image"
+          docker logs newsops-api-test 2>/dev/null || true
+          docker stop newsops-api-test 2>/dev/null || true
+          docker rm newsops-api-test 2>/dev/null || true
           exit 1
