@@ -4,16 +4,16 @@ Preprocessing pipeline — News Category Dataset
 AI NewsOps Platform · AIA Bloc 4
 """
 
-import re
+import argparse
 import json
 import logging
-import argparse
+import re
 from pathlib import Path
 
+import mlflow
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-import mlflow
 
 logging.basicConfig(
     level=logging.INFO,

@@ -8,25 +8,25 @@ Modèle     : distilbert-base-uncased (HuggingFace)
 Usage      : python src/models/train.py [--epochs 3] [--batch-size 32] [--lr 2e-5]
 """
 
+import argparse
 import json
 import logging
-import argparse
 import warnings
 from pathlib import Path
 
-import pandas as pd
-import torch
-from torch.utils.data import Dataset, DataLoader
-from transformers import (
-    DistilBertTokenizerFast,
-    DistilBertForSequenceClassification,
-    get_linear_schedule_with_warmup,
-)
-from torch.optim import AdamW
-from sklearn.metrics import f1_score, accuracy_score, classification_report
 import matplotlib.pyplot as plt
 import mlflow
 import mlflow.pytorch
+import pandas as pd
+import torch
+from sklearn.metrics import accuracy_score, classification_report, f1_score
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+from transformers import (
+    DistilBertForSequenceClassification,
+    DistilBertTokenizerFast,
+    get_linear_schedule_with_warmup,
+)
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(

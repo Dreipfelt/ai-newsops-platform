@@ -13,21 +13,21 @@ Endpoints :
   GET  /redoc         → ReDoc documentation
 """
 
-import os
 import json
-import time
 import logging
-from pathlib import Path
-from datetime import datetime
+import os
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-import torch
 import numpy as np
-from transformers import DistilBertTokenizerFast, DistilBertForSequenceClassification
+import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
 
 # ─────────────────────────────────────────────────────────────
 # LOGGING

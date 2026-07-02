@@ -7,28 +7,28 @@ Objectif : F1 macro ≥ 0.82
 Usage    : python src/models/baseline.py
 """
 
+import argparse
 import json
 import logging
-import argparse
 import warnings
 from pathlib import Path
 
+import joblib
+import matplotlib.pyplot as plt
+import mlflow
+import mlflow.sklearn
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
+    accuracy_score,
     classification_report,
     confusion_matrix,
     f1_score,
-    accuracy_score,
 )
-import mlflow
-import mlflow.sklearn
-import joblib
+from sklearn.pipeline import Pipeline
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
