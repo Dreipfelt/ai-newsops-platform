@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-07-03T11:24:25.518792",
+  "n_drifted": 0,
+  "n_features": 3,
+  "drift_share": 0.0,
+  "alert_level": "ok",
+  "reference_size": 100,
+  "production_size": 100,
+  "features": {
+    "text_length": {
+      "test": "kolmogorov-smirnov",
+      "statistic": 0.0,
+      "p_value": 1.0,
+      "drift_detected": false,
+      "interpretation": "Longueur des textes en production"
+    },
+    "word_count": {
+      "test": "kolmogorov-smirnov",
+      "statistic": 0.0,
+      "p_value": 1.0,
+      "drift_detected": false,
+      "interpretation": "Nombre de mots par article"
+    },
+    "category_distribution": {
+      "test": "chi-squared",
+      "statistic": 0.0,
+      "p_value": 1.0,
+      "drift_detected": false,
+      "interpretation": "Distribution des cat\u00e9gories pr\u00e9dites",
+      "top_categories_ref": {
+        "entertainment": 26,
+        "business": 21,
+        "family_education": 19,
+        "arts_culture": 18,
+        "crime": 16
+      },
+      "top_categories_prod": {
+        "entertainment": 26,
+        "business": 21,
+        "family_education": 19,
+        "arts_culture": 18,
+        "crime": 16
+      }
+    }
+  },
+  "thresholds": {
+    "numerical_pvalue": 0.05,
+    "categorical_pvalue": 0.05,
+    "drift_share_alert": 0.15
+  }
+}

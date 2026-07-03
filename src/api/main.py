@@ -29,6 +29,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
 
+
+
 # ─────────────────────────────────────────────────────────────
 # LOGGING
 # ─────────────────────────────────────────────────────────────
@@ -77,7 +79,9 @@ async def lifespan(app: FastAPI):
 
     model_state["tokenizer"] = DistilBertTokenizerFast.from_pretrained(MODEL_DIR)
     model_state["model"] = DistilBertForSequenceClassification.from_pretrained(
-        MODEL_DIR
+        MODEL_DIR,
+        local_files_only=True,
+        ignore_mismatched_sizes=False,
     )
     model_state["model"].to(DEVICE)
     model_state["model"].eval()
@@ -141,6 +145,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+try:
+    from src.monitoring.monitoring_router import router as monitoring_router
+    app.include_router(monitoring_router, prefix="/monitoring", tags=["Monitoring"])
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning(f"Monitoring router non chargé : {e}")
+
+# Monitoring router
+try:
+    from src.monitoring.monitoring_router import router as monitoring_router
+    app.include_router(monitoring_router, prefix="/monitoring", tags=["Monitoring"])
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).warning(f"Monitoring router non chargé : {e}")
 
 
 # ─────────────────────────────────────────────────────────────
