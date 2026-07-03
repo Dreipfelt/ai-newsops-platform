@@ -111,6 +111,21 @@ services:
     networks:
       - monitoring-network
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.streamlit
+    container_name: newsops-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - monitoring-network
+    restart: unless-stopped
+
 networks:
   monitoring-network:
     driver: bridge

@@ -1,16 +1,15 @@
 import streamlit as st
 import requests
 import pandas as pd
-import json
-from datetime import datetime
+import os
 import plotly.express as px
+
+# URL de l'API (modifiable via variable d'environnement)
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Configuration de la page
 st.set_page_config(page_title="NewsOps Dashboard", layout="wide")
 st.title("📊 AI NewsOps Platform — Monitoring Dashboard")
-
-# URL de l'API (à adapter si besoin)
-API_URL = "http://localhost:8000"
 
 # Sidebar
 st.sidebar.header("🔍 Navigation")
@@ -30,16 +29,19 @@ if page == "🏠 Accueil":
     **API** : en cours d'exécution sur `{API_URL}`
     """)
 
-    # Vérification de l'état de l'API
     try:
-        health = requests.get(f"{API_URL}/health", timeout=2)
+        health = requests.get(f"{API_URL}/health", timeout=5)
         if health.status_code == 200:
             st.success("✅ API opérationnelle")
             st.json(health.json())
         else:
-            st.error("❌ API non disponible")
-    except:
-        st.error("❌ Impossible de contacter l'API")
+            st.error(f"❌ API a répondu avec le code {health.status_code}")
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Impossible de se connecter à l'API. Vérifiez que l'API est bien lancée.")
+    except requests.exceptions.Timeout:
+        st.error("❌ Délai d'attente dépassé. L'API met trop de temps à répondre.")
+    except Exception as e:
+        st.error(f"❌ Erreur inattendue : {e}")
 
 # --- Page Prédiction ---
 elif page == "📈 Prédiction":
@@ -53,12 +55,11 @@ elif page == "📈 Prédiction":
             if headline:
                 payload = {"headline": headline, "short_description": short_desc}
                 try:
-                    response = requests.post(f"{API_URL}/predict", json=payload)
+                    response = requests.post(f"{API_URL}/predict", json=payload, timeout=10)
                     if response.status_code == 200:
                         result = response.json()
                         st.success("✅ Prédiction réussie")
                         st.json(result)
-                        # Stocker le résultat pour l'affichage dans la colonne 2
                         st.session_state['result'] = result
                     else:
                         st.error(f"Erreur {response.status_code}: {response.text}")
@@ -78,24 +79,19 @@ elif page == "📈 Prédiction":
 # --- Page Monitoring ---
 elif page == "📊 Monitoring":
     st.header("📈 Métriques du modèle")
-
     col1, col2, col3 = st.columns(3)
-    try:
-        # Récupérer les métriques depuis le fichier training_metrics.json (ou via l'API)
-        # Ici on affiche des valeurs statiques pour l'exemple
-        st.metric("📊 F1 Score", "0.6791")
-        st.metric("🎯 Accuracy", "0.7382")
-        st.metric("📈 Baseline", "0.6515")
-    except:
-        st.warning("Métriques non disponibles")
+    st.metric("📊 F1 Score", "0.6791")
+    st.metric("🎯 Accuracy", "0.7382")
+    st.metric("📈 Baseline", "0.6515")
 
-    # Health check du monitoring
     try:
-        health = requests.get(f"{API_URL}/monitoring/health")
+        health = requests.get(f"{API_URL}/monitoring/health", timeout=5)
         if health.status_code == 200:
             data = health.json()
             st.subheader("🏥 État du monitoring")
             st.json(data)
+        else:
+            st.warning("Monitoring non disponible")
     except:
         st.warning("Monitoring non disponible")
 
@@ -105,7 +101,7 @@ elif page == "🔄 Drift":
 
     if st.button("🔍 Vérifier le drift maintenant"):
         try:
-            response = requests.get(f"{API_URL}/monitoring/drift")
+            response = requests.get(f"{API_URL}/monitoring/drift", timeout=10)
             if response.status_code == 200:
                 data = response.json()
                 st.success("✅ Analyse de drift effectuée")
@@ -115,10 +111,9 @@ elif page == "🔄 Drift":
         except Exception as e:
             st.error(f"Erreur de connexion: {e}")
 
-    # Logs de drift
     st.subheader("📜 Historique des drifts")
     try:
-        logs_response = requests.get(f"{API_URL}/monitoring/drift/logs?limit=10")
+        logs_response = requests.get(f"{API_URL}/monitoring/drift/logs?limit=10", timeout=5)
         if logs_response.status_code == 200:
             logs = logs_response.json()
             if logs.get('logs'):

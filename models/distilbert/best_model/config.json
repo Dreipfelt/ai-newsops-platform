@@ -6,7 +6,7 @@
   "attention_dropout": 0.1,
   "bos_token_id": null,
   "dim": 768,
-  "dropout": 0.1,
+  "dropout": 0.2,
   "dtype": "float32",
   "eos_token_id": null,
   "hidden_dim": 3072,
