@@ -724,3 +724,4 @@ zipp==4.1.0
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools
+prometheus-fastapi-instrumentator

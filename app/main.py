@@ -32,6 +32,7 @@ import torch
 # Prometheus
 import prometheus_client
 from prometheus_client import Counter, Histogram, Gauge, generate_latest
+from prometheus_fastapi_instrumentator import Instrumentator
 
 # Evidently (optionnel)
 try:
@@ -251,11 +252,15 @@ class ModelMonitor:
 # ============================================================
 # Initialisation de l'API
 # ============================================================
+
 app = FastAPI(
     title="AI NewsOps Platform API",
     description="Classification d'articles de news avec DistilBERT",
-    version="1.0.0"
+    version="1.0.0",
 )
+
+# Expose automatiquement /metrics
+Instrumentator().instrument(app).expose(app)
 
 app.add_middleware(
     CORSMiddleware,
