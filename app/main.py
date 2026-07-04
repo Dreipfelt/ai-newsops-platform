@@ -1,51 +1,51 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
-API FastAPI pour la classification d'articles de news
-avec monitoring Evidently et métriques Prometheus
+AI NewsOps Platform API.
+
+FastAPI service for:
+- news classification with DistilBERT;
+- Prometheus metrics;
+- monitoring health checks;
+- Evidently drift status exposure.
 """
 
-import os
+from __future__ import annotations
+
 import json
-import time
 import logging
-from pathlib import Path
+import os
+import time
 from datetime import datetime
-from typing import List, Optional
+from pathlib import Path
+from typing import Optional
 
-import pandas as pd
 import numpy as np
-
-# FastAPI
-from fastapi import FastAPI, HTTPException, Request, status
+import pandas as pd
+import torch
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel, Field
-
-# Transformers
-from transformers import (
-    DistilBertTokenizerFast,
-    DistilBertForSequenceClassification,
-)
-import torch
-
-# Prometheus
-import prometheus_client
-from prometheus_client import Counter, Histogram, Gauge, generate_latest
+from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel, Field
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast
 
-# Evidently (optionnel)
 try:
     from evidently import ColumnMapping
-    from evidently.report import Report
     from evidently.metric_preset import DataDriftPreset
+    from evidently.report import Report
+
     EVIDENTLY_AVAILABLE = True
 except ImportError:
     EVIDENTLY_AVAILABLE = False
 
+
 # ============================================================
-# Configuration
+# Logging
 # ============================================================
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(message)s",
@@ -53,28 +53,39 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+
+# ============================================================
+# Configuration
+# ============================================================
+
 MODEL_DIR = Path(os.getenv("MODEL_DIR", "models/distilbert/best_model"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "data/processed"))
 MAX_LENGTH = int(os.getenv("MAX_LENGTH", "128"))
+MODEL_VERSION = os.getenv("MODEL_VERSION", "1.0.0")
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-DRIFT_LOGS_PATH = Path("monitoring/drift_logs.json")
+MONITORING_DIR = Path("monitoring")
+DRIFT_LOGS_PATH = MONITORING_DIR / "drift_logs.json"
+DRIFT_STATUS_PATH = MONITORING_DIR / "quick_drift_latest.json"
 REFERENCE_DATA_PATH = DATA_DIR / "test.parquet"
 
+
 # ============================================================
-# Pydantic Models avec descriptions
+# Pydantic Schemas
 # ============================================================
+
 class PredictRequest(BaseModel):
     headline: str = Field(
         ...,
         min_length=3,
         max_length=500,
-        description="Le titre de l'article (obligatoire, 3 à 500 caractères)."
+        description="Article headline.",
     )
     short_description: Optional[str] = Field(
-        None,
+        default=None,
         max_length=1000,
-        description="Courte description de l'article (optionnelle, max 1000 caractères)."
+        description="Optional short article description.",
     )
 
     def get_text(self) -> str:
@@ -82,83 +93,135 @@ class PredictRequest(BaseModel):
             return f"{self.headline} [SEP] {self.short_description}"
         return self.headline
 
+
 class PredictResponse(BaseModel):
-    category: str = Field(..., description="Catégorie prédite.")
-    confidence: float = Field(..., description="Score de confiance (0 à 1).")
-    top3: List[tuple] = Field(..., description="Top 3 des catégories avec leurs scores.")
+    category: str
+    confidence: float
+    top3: list[tuple[str, float]]
+    model_version: str
+
 
 class BatchPredictRequest(BaseModel):
-    articles: List[PredictRequest] = Field(..., description="Liste des articles à classer (max 100).")
+    articles: list[PredictRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="List of articles to classify. Maximum: 100.",
+    )
+
 
 class BatchPredictResponse(BaseModel):
-    predictions: List[PredictResponse]
+    predictions: list[PredictResponse]
+
 
 # ============================================================
-# Métriques Prometheus
+# Prometheus Metrics
 # ============================================================
-REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
-REQUEST_LATENCY = Histogram('http_request_duration_seconds', 'HTTP request latency', ['method', 'endpoint'])
-DRIFT_SCORE = Gauge('model_drift_score', 'Current model drift score')
-MODEL_F1 = Gauge('model_f1_score', 'Model F1 score')
-MODEL_ACCURACY = Gauge('model_accuracy', 'Model accuracy')
+
+REQUEST_COUNT = Counter(
+    "http_requests_total",
+    "Total HTTP requests",
+    ["method", "endpoint", "status"],
+)
+
+REQUEST_LATENCY = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency",
+    ["method", "endpoint"],
+)
+
+DRIFT_SCORE = Gauge(
+    "model_drift_score",
+    "Current model drift score or drift share",
+)
+
+MODEL_F1 = Gauge(
+    "model_f1_score",
+    "Model F1 score",
+)
+
+MODEL_ACCURACY = Gauge(
+    "model_accuracy",
+    "Model accuracy",
+)
+
 
 # ============================================================
-# Classe de monitoring
+# Model Monitor
 # ============================================================
+
 class ModelMonitor:
-    """Moniteur de dérive pour le modèle de classification"""
+    """Lightweight Evidently-based drift monitor."""
 
-    def __init__(self, reference_data_path=REFERENCE_DATA_PATH):
-        self.reference_data = None
-        self.drift_logs = []
+    def __init__(self, reference_data_path: Path = REFERENCE_DATA_PATH) -> None:
+        self.reference_data: Optional[pd.DataFrame] = None
+        self.drift_logs: list[dict] = []
         self._load_reference_data(reference_data_path)
         self._load_drift_logs()
 
-    def _load_reference_data(self, path):
-        if path.exists():
-            try:
-                df = pd.read_parquet(path)
-                sample_size = min(500, len(df))
-                self.reference_data = df.sample(n=sample_size, random_state=42)
-                if "prediction" not in self.reference_data.columns:
-                    self.reference_data["prediction"] = np.random.randint(0, 13, len(self.reference_data))
-                log.info(f"✅ Référence chargée: {len(self.reference_data)} exemples")
-            except Exception as e:
-                log.error(f"Erreur chargement référence: {e}")
-                self.reference_data = None
-        else:
-            log.warning(f"⚠️ Fichier de référence non trouvé: {path}")
+    def _load_reference_data(self, path: Path) -> None:
+        if not path.exists():
+            log.warning("Reference data not found: %s", path)
+            self.reference_data = None
+            return
 
-    def _load_drift_logs(self):
-        if DRIFT_LOGS_PATH.exists():
-            try:
-                with open(DRIFT_LOGS_PATH) as f:
-                    self.drift_logs = json.load(f)
-                log.info(f"✅ Logs de drift chargés: {len(self.drift_logs)}")
-            except Exception as e:
-                log.error(f"Erreur chargement logs: {e}")
-                self.drift_logs = []
-        else:
+        try:
+            df = pd.read_parquet(path)
+            sample_size = min(500, len(df))
+            self.reference_data = df.sample(n=sample_size, random_state=42).copy()
+
+            if "prediction" not in self.reference_data.columns:
+                self.reference_data["prediction"] = np.random.randint(
+                    0,
+                    13,
+                    len(self.reference_data),
+                )
+
+            log.info("Reference data loaded: %s rows", len(self.reference_data))
+        except Exception as exc:
+            log.exception("Failed to load reference data: %s", exc)
+            self.reference_data = None
+
+    def _load_drift_logs(self) -> None:
+        if not DRIFT_LOGS_PATH.exists():
             DRIFT_LOGS_PATH.parent.mkdir(parents=True, exist_ok=True)
             self.drift_logs = []
+            return
 
-    def _save_drift_logs(self):
         try:
-            with open(DRIFT_LOGS_PATH, "w") as f:
-                json.dump(self.drift_logs, f, indent=2)
-        except Exception as e:
-            log.error(f"Erreur sauvegarde logs: {e}")
+            self.drift_logs = json.loads(DRIFT_LOGS_PATH.read_text())
+            log.info("Drift logs loaded: %s entries", len(self.drift_logs))
+        except Exception as exc:
+            log.warning("Failed to load drift logs: %s", exc)
+            self.drift_logs = []
 
-    def detect_drift(self, current_data, threshold=0.3):
+    def _save_drift_logs(self) -> None:
+        try:
+            DRIFT_LOGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DRIFT_LOGS_PATH.write_text(json.dumps(self.drift_logs, indent=2))
+        except Exception as exc:
+            log.error("Failed to save drift logs: %s", exc)
+
+    def detect_drift(
+        self,
+        current_data: dict | list[dict] | pd.DataFrame,
+        threshold: float = 0.3,
+    ) -> tuple[dict, Optional[Report]]:
         if self.reference_data is None:
-            return {"error": "No reference data available", "drift_detected": False}, None
+            return {
+                "status": "error",
+                "message": "No reference data available.",
+                "drift_detected": False,
+                "significant_drift": False,
+            }, None
 
         if not EVIDENTLY_AVAILABLE:
             return {
+                "status": "warning",
+                "message": "Evidently is not installed.",
                 "drift_detected": False,
-                "drift_score": 0.0,
                 "significant_drift": False,
-                "message": "Evidently non disponible"
+                "drift_score": 0.0,
             }, None
 
         try:
@@ -167,100 +230,125 @@ class ModelMonitor:
             elif isinstance(current_data, list):
                 current_df = pd.DataFrame(current_data)
             elif isinstance(current_data, pd.DataFrame):
-                current_df = current_data
+                current_df = current_data.copy()
             else:
-                return {"error": "Format de données non supporté"}, None
+                return {
+                    "status": "error",
+                    "message": "Unsupported current_data format.",
+                    "drift_detected": False,
+                    "significant_drift": False,
+                }, None
 
             if "prediction" not in current_df.columns:
                 current_df["prediction"] = np.random.randint(0, 13, len(current_df))
-            if "prediction" not in self.reference_data.columns:
-                self.reference_data["prediction"] = np.random.randint(0, 13, len(self.reference_data))
+
+            reference_df = self.reference_data.copy()
+            if "prediction" not in reference_df.columns:
+                reference_df["prediction"] = np.random.randint(0, 13, len(reference_df))
 
             column_mapping = ColumnMapping(
                 prediction="prediction",
                 target="label" if "label" in current_df.columns else None,
-                numerical_features=[],
-                categorical_features=[],
-                text_features=["text"] if "text" in current_df.columns else [],
+                numerical_features=[
+                    col for col in ["text_length", "word_count", "year"]
+                    if col in current_df.columns and col in reference_df.columns
+                ],
+                categorical_features=[
+                    col for col in ["category", "has_desc"]
+                    if col in current_df.columns and col in reference_df.columns
+                ],
+                text_features=[
+                    col for col in ["text_clean", "text"]
+                    if col in current_df.columns and col in reference_df.columns
+                ],
             )
 
             report = Report(metrics=[DataDriftPreset()])
             report.run(
-                reference_data=self.reference_data,
+                reference_data=reference_df,
                 current_data=current_df,
                 column_mapping=column_mapping,
             )
 
-            drift_metrics = report.as_dict()
-            drift_detected = False
-            drift_score = 0.0
-            drift_ratio = 0.0
+            report_dict = report.as_dict()
+            drift_result = report_dict["metrics"][0]["result"]
 
-            if "metrics" in drift_metrics:
-                for metric in drift_metrics["metrics"]:
-                    if metric["metric"] == "DataDriftPreset":
-                        drift_detected = metric["result"].get("drift_detected", False)
-                        drift_score = metric["result"].get("drift_score", 0.0)
-                        drift_ratio = metric["result"].get("drift_ratio", 0.0)
+            drift_detected = bool(
+                drift_result.get("dataset_drift")
+                or drift_result.get("drift_detected")
+                or False
+            )
+
+            drift_score = float(
+                drift_result.get("share_of_drifted_columns")
+                or drift_result.get("drift_share")
+                or drift_result.get("drift_score")
+                or 0.0
+            )
 
             significant_drift = drift_detected or drift_score > threshold
 
             result = {
                 "timestamp": datetime.now().isoformat(),
+                "status": "drift" if significant_drift else "ok",
                 "drift_detected": drift_detected,
                 "significant_drift": significant_drift,
                 "drift_score": drift_score,
-                "drift_ratio": drift_ratio,
                 "threshold": threshold,
-                "n_reference": len(self.reference_data),
+                "n_reference": len(reference_df),
                 "n_current": len(current_df),
             }
 
             self.drift_logs.append(result)
             self._save_drift_logs()
+
             return result, report
 
-        except Exception as e:
-            log.error(f"Erreur détection drift: {e}")
+        except Exception as exc:
+            log.exception("Drift detection failed: %s", exc)
             return {
+                "timestamp": datetime.now().isoformat(),
+                "status": "error",
+                "message": str(exc),
                 "drift_detected": False,
-                "drift_score": 0.0,
                 "significant_drift": False,
-                "error": str(e),
-                "n_reference": len(self.reference_data) if self.reference_data is not None else 0,
-                "n_current": len(current_data) if current_data is not None else 0,
+                "drift_score": 0.0,
             }, None
 
-    def get_recent_drifts(self, limit=10):
+    def get_recent_drifts(self, limit: int = 10) -> list[dict]:
         return self.drift_logs[-limit:] if self.drift_logs else []
 
-    def get_drift_summary(self):
+    def get_drift_summary(self) -> dict:
         if not self.drift_logs:
-            return {"total": 0, "recent_drifts": 0, "last_drift": None}
+            return {
+                "total": 0,
+                "recent_drifts": 0,
+                "last_check": None,
+                "last_drift": None,
+            }
 
         recent = self.drift_logs[-20:]
-        drifts = [d for d in recent if d.get("significant_drift", False)]
+        drifts = [entry for entry in recent if entry.get("significant_drift", False)]
 
         return {
             "total": len(self.drift_logs),
             "recent_drifts": len(drifts),
-            "last_drift": drifts[-1] if drifts else recent[-1],
-            "last_check": recent[-1] if recent else None,
+            "last_check": recent[-1],
+            "last_drift": drifts[-1] if drifts else None,
         }
 
 
 # ============================================================
-# Initialisation de l'API
+# FastAPI App
 # ============================================================
 
 app = FastAPI(
     title="AI NewsOps Platform API",
-    description="Classification d'articles de news avec DistilBERT",
-    version="1.0.0",
+    description="News article classification API with DistilBERT, Prometheus and Evidently monitoring.",
+    version=MODEL_VERSION,
 )
 
-# Expose automatiquement /metrics
-Instrumentator().instrument(app).expose(app)
+Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
 app.add_middleware(
     CORSMiddleware,
@@ -270,9 +358,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================================
-# Middleware Prometheus
-# ============================================================
+
 @app.middleware("http")
 async def prometheus_middleware(request: Request, call_next):
     start_time = time.time()
@@ -282,377 +368,327 @@ async def prometheus_middleware(request: Request, call_next):
     REQUEST_COUNT.labels(
         method=request.method,
         endpoint=request.url.path,
-        status=response.status_code
+        status=str(response.status_code),
     ).inc()
 
     REQUEST_LATENCY.labels(
         method=request.method,
-        endpoint=request.url.path
+        endpoint=request.url.path,
     ).observe(duration)
 
     return response
 
 
 # ============================================================
-# Chargement du modèle et du tokenizer (lazy loading)
+# Lazy Loaded Resources
 # ============================================================
-tokenizer = None
-model = None
-id2label = None
-label2id = None
-monitor = None
 
-def load_model_and_tokenizer():
+tokenizer: Optional[DistilBertTokenizerFast] = None
+model: Optional[DistilBertForSequenceClassification] = None
+id2label: Optional[dict[int, str]] = None
+label2id: Optional[dict[str, int]] = None
+monitor: Optional[ModelMonitor] = None
+
+
+def load_model_and_tokenizer() -> bool:
     global tokenizer, model, id2label, label2id
+
     try:
-        log.info(f"🚀 Chargement du modèle depuis {MODEL_DIR}")
+        log.info("Loading model from %s", MODEL_DIR)
+
         tokenizer = DistilBertTokenizerFast.from_pretrained(str(MODEL_DIR))
         model = DistilBertForSequenceClassification.from_pretrained(str(MODEL_DIR))
         model.to(DEVICE)
         model.eval()
 
-        if hasattr(model.config, 'id2label') and model.config.id2label:
-            id2label = {int(k): v for k, v in model.config.id2label.items()}
-            label2id = {v: k for k, v in id2label.items()}
-            log.info(f"✅ Mapping depuis le modèle: {len(id2label)} classes")
+        if hasattr(model.config, "id2label") and model.config.id2label:
+            id2label = {int(key): value for key, value in model.config.id2label.items()}
         else:
             label_mapping_path = DATA_DIR / "label_mapping.json"
-            if label_mapping_path.exists():
-                with open(label_mapping_path) as f:
-                    id2label = json.load(f)
-                    id2label = {int(k): v for k, v in id2label.items()}
-                    label2id = {v: k for k, v in id2label.items()}
-                log.info(f"✅ Mapping depuis label_mapping.json: {len(id2label)} classes")
-            else:
-                id2label = {0: "POLITICS", 1: "SPORTS", 2: "ENTERTAINMENT", 3: "TECH", 4: "HEALTH"}
-                label2id = {v: k for k, v in id2label.items()}
-                log.warning(f"⚠️ Mapping par défaut: {len(id2label)} classes")
 
-        log.info(f"✅ Modèle chargé sur {DEVICE} avec {len(id2label)} classes: {list(id2label.values())}")
+            if label_mapping_path.exists():
+                raw_mapping = json.loads(label_mapping_path.read_text())
+                id2label = {int(key): value for key, value in raw_mapping.items()}
+            else:
+                id2label = {
+                    0: "politics",
+                    1: "sports",
+                    2: "entertainment",
+                    3: "tech_science",
+                    4: "business",
+                }
+                log.warning("Using fallback label mapping.")
+
+        label2id = {value: key for key, value in id2label.items()}
+
+        log.info(
+            "Model loaded on %s with %s classes.",
+            DEVICE,
+            len(id2label),
+        )
         return True
-    except Exception as e:
-        log.error(f"❌ Erreur chargement modèle: {e}")
+
+    except Exception as exc:
+        log.exception("Failed to load model: %s", exc)
+        tokenizer = None
+        model = None
+        id2label = None
+        label2id = None
         return False
 
-def load_monitor():
+
+def load_monitor() -> ModelMonitor:
     global monitor
     monitor = ModelMonitor()
-    log.info("✅ Moniteur de drift initialisé")
+    log.info("Drift monitor initialized.")
     return monitor
 
-def ensure_model_loaded():
-    """Charge le modèle et le moniteur si ce n'est pas déjà fait."""
-    global tokenizer, model, id2label, label2id, monitor
-    if model is None:
+
+def ensure_model_loaded() -> None:
+    if model is None or tokenizer is None or id2label is None:
         load_model_and_tokenizer()
+
+
+def ensure_monitor_loaded() -> None:
     if monitor is None:
         load_monitor()
 
 
+def update_model_metrics() -> None:
+    metrics_path = MODEL_DIR.parent / "training_metrics.json"
+
+    if not metrics_path.exists():
+        return
+
+    try:
+        metrics = json.loads(metrics_path.read_text())
+        MODEL_F1.set(float(metrics.get("test_f1_macro", 0.0)))
+        MODEL_ACCURACY.set(float(metrics.get("test_accuracy", 0.0)))
+    except Exception as exc:
+        log.warning("Failed to update model metrics: %s", exc)
+
+
 # ============================================================
-# Routes API (avec documentation Swagger enrichie)
+# Routes
 # ============================================================
 
-@app.get(
-    "/",
-    summary="Informations générales",
-    description="Retourne les métadonnées de l'API et son état.",
-    tags=["Informations"]
-)
+@app.get("/", tags=["Information"])
 async def root():
-    ensure_model_loaded()  # charge si nécessaire
+    ensure_model_loaded()
+
     return {
         "name": "AI NewsOps Platform API",
-        "version": "1.0.0",
+        "version": MODEL_VERSION,
         "status": "running",
         "docs": "/docs",
         "redoc": "/redoc",
         "health": "/health",
-        "monitoring": "/monitoring/health",
         "metrics": "/metrics",
+        "monitoring": {
+            "health": "/monitoring/health",
+            "drift": "/monitoring/drift",
+            "drift_run": "/monitoring/drift/run",
+            "logs": "/monitoring/drift/logs",
+        },
         "model_loaded": model is not None,
-        "device": str(DEVICE)
+        "device": str(DEVICE),
     }
 
 
-@app.get(
-    "/health",
-    summary="Vérifier la santé du service",
-    description="Retourne l'état de l'API, du modèle et du moniteur.",
-    tags=["Monitoring"],
-    responses={
-        200: {
-            "description": "Service en bonne santé",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "status": "ok",
-                        "model_loaded": True,
-                        "device": "cpu",
-                        "tokenizer_loaded": True,
-                        "monitor_initialized": True
-                    }
-                }
-            }
-        }
-    }
-)
+@app.get("/health", tags=["Monitoring"])
 async def health_check():
     ensure_model_loaded()
+    ensure_monitor_loaded()
+
     return {
         "status": "ok",
         "model_loaded": model is not None,
         "device": str(DEVICE),
         "tokenizer_loaded": tokenizer is not None,
-        "monitor_initialized": monitor is not None
+        "monitor_initialized": monitor is not None,
     }
 
 
-@app.get(
-    "/metrics",
-    summary="Exposer les métriques Prometheus",
-    description="Endpoint pour Prometheus. Retourne les métriques au format texte.",
-    tags=["Monitoring"]
-)
+@app.get("/metrics", tags=["Monitoring"])
 async def metrics_endpoint():
-    # On charge le modèle pour avoir les métriques, mais si échec on renvoie 0
     ensure_model_loaded()
-    if model is not None:
-        try:
-            metrics_path = MODEL_DIR.parent / "training_metrics.json"
-            if metrics_path.exists():
-                with open(metrics_path) as f:
-                    data = json.load(f)
-                    MODEL_F1.set(data.get("test_f1_macro", 0))
-                    MODEL_ACCURACY.set(data.get("test_accuracy", 0))
-        except Exception as e:
-            log.error(f"Erreur mise à jour métriques: {e}")
+    ensure_monitor_loaded()
 
-    if monitor and monitor.drift_logs:
-        last_drift = monitor.drift_logs[-1]
-        DRIFT_SCORE.set(last_drift.get("drift_score", 0))
+    update_model_metrics()
+
+    if DRIFT_STATUS_PATH.exists():
+        try:
+            drift_status = json.loads(DRIFT_STATUS_PATH.read_text())
+            DRIFT_SCORE.set(float(drift_status.get("drift_share", 0.0)))
+        except Exception as exc:
+            log.warning("Failed to update drift metric: %s", exc)
 
     return PlainTextResponse(generate_latest())
 
 
-@app.post(
-    "/predict",
-    response_model=PredictResponse,
-    summary="Prédire la catégorie d'un article",
-    description="Analyse un article (titre + description facultative) et retourne la catégorie la plus probable avec le top 3.",
-    tags=["Prédiction"],
-    responses={
-        200: {
-            "description": "Prédiction réussie",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "category": "POLITICS",
-                        "confidence": 0.89,
-                        "top3": [["POLITICS", 0.89], ["OTHER", 0.07], ["BUSINESS", 0.04]]
-                    }
-                }
-            }
-        },
-        422: {"description": "Erreur de validation (ex: headline trop court)"},
-        503: {"description": "Modèle non chargé"}
-    }
-)
+@app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 async def predict(request: PredictRequest):
     ensure_model_loaded()
-    if model is None or tokenizer is None:
-        raise HTTPException(status_code=503, detail="Modèle non chargé")
+
+    if model is None or tokenizer is None or id2label is None:
+        raise HTTPException(status_code=503, detail="Model is not loaded.")
 
     try:
         text = request.get_text()
+
         inputs = tokenizer(
             text,
             max_length=MAX_LENGTH,
             padding="max_length",
             truncation=True,
-            return_tensors="pt"
+            return_tensors="pt",
         )
-        inputs = {k: v.to(DEVICE) for k, v in inputs.items()}
+
+        inputs = {key: value.to(DEVICE) for key, value in inputs.items()}
 
         with torch.no_grad():
             outputs = model(**inputs)
-            probs = torch.softmax(outputs.logits, dim=-1)
-            top_probs, top_indices = torch.topk(probs, k=3)
+            probabilities = torch.softmax(outputs.logits, dim=-1)
+            top_probs, top_indices = torch.topk(probabilities, k=3)
 
-        top_idx = top_indices[0][0].item()
-        top_confidence = top_probs[0][0].item()
-        category = id2label.get(top_idx, "unknown")
-        confidence = top_confidence
-        top3 = []
-        for i in range(3):
-            idx = top_indices[0][i].item()
-            prob = top_probs[0][i].item()
-            top3.append((id2label.get(idx, "unknown"), prob))
-
-        return PredictResponse(category=category, confidence=confidence, top3=top3)
-    except Exception as e:
-        log.error(f"Erreur prédiction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post(
-    "/predict/batch",
-    response_model=BatchPredictResponse,
-    summary="Prédire plusieurs articles en lot",
-    description="Classifie jusqu'à 100 articles en une seule requête.",
-    tags=["Prédiction"],
-    responses={
-        200: {"description": "Prédictions réussies"},
-        422: {"description": "Plus de 100 articles ou erreur de validation"},
-        503: {"description": "Modèle non chargé"}
-    }
-)
-async def predict_batch(request: BatchPredictRequest):
-    ensure_model_loaded()
-    if model is None or tokenizer is None:
-        raise HTTPException(status_code=503, detail="Modèle non chargé")
-
-    if len(request.articles) > 100:
-        raise HTTPException(status_code=422, detail="Maximum 100 articles par batch")
-
-    try:
-        predictions = []
-        for article in request.articles:
-            result = await predict(article)
-            predictions.append(result)
-        return BatchPredictResponse(predictions=predictions)
-    except Exception as e:
-        log.error(f"Erreur batch: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================
-# Monitoring routes
-# ============================================================
-
-@app.get(
-    "/monitoring/drift",
-    summary="Vérifier la dérive du modèle",
-    description="Compare les données récentes à la référence et détecte une éventuelle dérive (data drift).",
-    tags=["Monitoring"],
-    responses={
-        200: {"description": "Rapport de dérive généré"},
-        500: {"description": "Erreur interne"}
-    }
-)
-async def get_drift_status():
-    ensure_model_loaded()
-    if monitor is None:
-        return {
-            "status": "error",
-            "message": "Moniteur non initialisé",
-            "drift": None
-        }
-
-    try:
-        if monitor.reference_data is not None:
-            current_sample = monitor.reference_data.sample(
-                n=min(50, len(monitor.reference_data)),
-                random_state=42
+        top3 = [
+            (
+                id2label.get(top_indices[0][idx].item(), "unknown"),
+                float(top_probs[0][idx].item()),
             )
-            result, report = monitor.detect_drift(current_sample)
+            for idx in range(3)
+        ]
 
-            DRIFT_SCORE.set(result.get("drift_score", 0.0))
+        category, confidence = top3[0]
 
-            if "error" in result:
-                return {
-                    "status": "warning",
-                    "message": result.get("error", "Erreur inconnue"),
-                    "drift": result
-                }
+        return PredictResponse(
+            category=category,
+            confidence=confidence,
+            top3=top3,
+            model_version=MODEL_VERSION,
+        )
 
-            return {
-                "status": "success",
-                "drift": result,
-                "summary": monitor.get_drift_summary()
-            }
-        else:
-            return {
-                "status": "error",
-                "message": "Données de référence non disponibles",
-                "drift": None
-            }
-    except Exception as e:
-        log.error(f"Erreur drift: {e}")
+    except Exception as exc:
+        log.exception("Prediction failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/predict/batch", response_model=BatchPredictResponse, tags=["Prediction"])
+async def predict_batch(request: BatchPredictRequest):
+    predictions = []
+
+    for article in request.articles:
+        prediction = await predict(article)
+        predictions.append(prediction)
+
+    return BatchPredictResponse(predictions=predictions)
+
+
+# ============================================================
+# Monitoring Routes
+# ============================================================
+
+@app.get("/monitoring/drift", tags=["Monitoring"])
+async def get_latest_drift_status():
+    if not DRIFT_STATUS_PATH.exists():
         return {
-            "status": "error",
-            "message": str(e),
-            "drift": None
+            "status": "unknown",
+            "message": "No drift status available. Run monitoring/drift_detector.py first.",
+            "drift_detected": None,
         }
-
-
-@app.get(
-    "/monitoring/drift/logs",
-    summary="Historique des dérives",
-    description="Récupère les derniers logs de détection de dérive.",
-    tags=["Monitoring"],
-    responses={
-        200: {"description": "Liste des logs"}
-    }
-)
-async def get_drift_logs(limit: int = 10):
-    ensure_model_loaded()
-    if monitor is None:
-        return {"status": "error", "message": "Moniteur non initialisé", "logs": []}
 
     try:
-        logs = monitor.get_recent_drifts(limit)
+        drift_status = json.loads(DRIFT_STATUS_PATH.read_text())
+        DRIFT_SCORE.set(float(drift_status.get("drift_share", 0.0)))
+        return drift_status
+    except Exception as exc:
+        log.exception("Failed to read drift status: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/monitoring/drift/run", tags=["Monitoring"])
+async def run_live_drift_detection():
+    ensure_monitor_loaded()
+
+    if monitor is None:
+        raise HTTPException(status_code=503, detail="Monitor is not initialized.")
+
+    if monitor.reference_data is None:
         return {
-            "status": "success",
-            "total": len(monitor.drift_logs) if monitor.drift_logs else 0,
-            "count": len(logs),
-            "logs": logs
+            "status": "error",
+            "message": "Reference data is not available.",
+            "drift": None,
         }
-    except Exception as e:
-        log.error(f"Erreur logs: {e}")
-        return {"status": "error", "message": str(e), "logs": []}
 
+    current_sample = monitor.reference_data.sample(
+        n=min(50, len(monitor.reference_data)),
+        random_state=42,
+    )
 
-@app.get(
-    "/monitoring/health",
-    summary="Santé du système de monitoring",
-    description="Vérifie que le moniteur et les données de référence sont disponibles.",
-    tags=["Monitoring"],
-    responses={
-        200: {"description": "État du monitoring"}
+    result, _ = monitor.detect_drift(current_sample)
+    DRIFT_SCORE.set(float(result.get("drift_score", 0.0)))
+
+    return {
+        "status": result.get("status", "ok"),
+        "drift": result,
+        "summary": monitor.get_drift_summary(),
     }
-)
-async def monitoring_health():
-    ensure_model_loaded()
+
+
+@app.get("/monitoring/drift/logs", tags=["Monitoring"])
+async def get_drift_logs(limit: int = 10):
+    ensure_monitor_loaded()
+
     if monitor is None:
         return {
             "status": "error",
-            "message": "Moniteur non initialisé",
-            "reference_data": False,
-            "drift_logs_count": 0,
-            "summary": {"total": 0, "recent_drifts": 0}
+            "message": "Monitor is not initialized.",
+            "logs": [],
+        }
+
+    logs = monitor.get_recent_drifts(limit)
+
+    return {
+        "status": "success",
+        "total": len(monitor.drift_logs),
+        "count": len(logs),
+        "logs": logs,
+    }
+
+
+@app.get("/monitoring/health", tags=["Monitoring"])
+async def monitoring_health():
+    ensure_monitor_loaded()
+
+    if monitor is None:
+        return {
+            "status": "error",
+            "message": "Monitor is not initialized.",
         }
 
     return {
         "status": "healthy",
         "reference_data": monitor.reference_data is not None,
-        "drift_logs_count": len(monitor.drift_logs) if monitor.drift_logs else 0,
+        "drift_logs_count": len(monitor.drift_logs),
         "summary": monitor.get_drift_summary(),
         "evidently_available": EVIDENTLY_AVAILABLE,
         "reference_path": str(REFERENCE_DATA_PATH),
-        "logs_path": str(DRIFT_LOGS_PATH)
+        "drift_status_path": str(DRIFT_STATUS_PATH),
+        "logs_path": str(DRIFT_LOGS_PATH),
     }
 
 
 # ============================================================
-# Point d'entrée
+# Entrypoint
 # ============================================================
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
     )
