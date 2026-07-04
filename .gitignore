@@ -30,9 +30,22 @@ reports/
 mlruns/
 mlflow.db
 # Secrets — JAMAIS commiter
-*.txt
+
+# Text files allowed in the repository
 !requirements.txt
+!requirements-dev.txt
+!requirements-ml.txt
+!requirements-monitoring.txt
+!requirements-streamlit.txt
 !README.txt
+
+# Secrets — never commit
+hf-token*
+*token*.txt
+*Token*.txt
+.env
+.env.*
+
 hf-token*
 *token*.txt
 *Token*.txt
