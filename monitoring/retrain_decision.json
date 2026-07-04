@@ -1,0 +1,6 @@
+{
+  "drift_score": 0.0,
+  "reason": "no_significant_drift",
+  "should_retrain": false,
+  "threshold": 0.3
+}
