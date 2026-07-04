@@ -25,7 +25,14 @@ def main() -> None:
     print(reference_df.columns.tolist())
     print(current_df.columns.tolist())
     
-    columns = ["category", "date"]
+    columns = [
+        "category",
+        "date",
+        "text_length",
+        "word_count",
+        "has_desc",
+        "year",
+    ]
     reference_df = reference_df[columns].copy()
     current_df = current_df[columns].copy()
 
