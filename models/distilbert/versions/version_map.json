@@ -1,0 +1,11 @@
+{
+  "1": {
+    "run_id": "4f05ef75abc745dfa8b51b8a36fc2065",
+    "backup_path": "models/distilbert/versions/v1_20260705",
+    "registered_at": "2026-07-05T17:56:17.300593",
+    "metrics": {
+      "test_f1_macro": 0.6791,
+      "test_accuracy": 0.7382
+    }
+  }
+}
