@@ -1,0 +1,274 @@
+{
+  "info": {
+    "name": "AI NewsOps Platform API",
+    "description": "Collection complète pour tester l'API de classification de news DistilBERT\nAIA Bloc 4 — MLOps Pipeline",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Info & Health",
+      "item": [
+        {
+          "name": "Root — Info API",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/",
+            "description": "Informations générales sur l'API"
+          }
+        },
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Vérifie que l'API et le modèle sont opérationnels"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Model loaded', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.equal('ok');",
+                  "  pm.expect(body.model_loaded).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Predictions",
+      "item": [
+        {
+          "name": "Predict — Politique",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"headline\": \"Senate votes on new climate legislation\",\n  \"short_description\": \"Democrats and Republicans reach compromise on green energy policy.\"\n}"
+            },
+            "description": "Test classification politique — confidence attendue > 0.90"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Catégorie politique', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.category).to.equal('politics');",
+                  "  pm.expect(body.confidence).to.be.above(0.80);",
+                  "});",
+                  "pm.test('Top3 présent', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.top3).to.have.length(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Predict — Sport",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"headline\": \"Lakers beat Warriors in overtime thriller\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Catégorie sports', () => {",
+                  "  pm.expect(pm.response.json().category).to.equal('sports');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Predict — Tech",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"headline\": \"Apple announces new MacBook Pro with M4 chip\",\n  \"short_description\": \"The new laptop features improved performance and battery life.\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Predict — Validation Error (headline trop court)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"headline\": \"Hi\"\n}"
+            },
+            "description": "Doit retourner 422"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('422 Validation Error', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Predict Batch — 3 articles",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict/batch",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"articles\": [\n    {\n      \"headline\": \"Senate votes on new climate legislation\",\n      \"short_description\": \"Democrats push green energy policy.\"\n    },\n    {\n      \"headline\": \"Lakers beat Warriors in overtime thriller\"\n    },\n    {\n      \"headline\": \"Apple announces new iPhone with AI features\",\n      \"short_description\": \"New model includes on-device AI processing.\"\n    }\n  ]\n}"
+            },
+            "description": "Classification de 3 articles en une seule requête"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('3 prédictions', () => {",
+                  "  pm.expect(pm.response.json().predictions).to.have.length(3);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Predict Batch — trop d'articles (>100)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/predict/batch",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"articles\": []\n}"
+            },
+            "description": "Liste vide → doit retourner 422"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('422 Validation Error', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Monitoring",
+      "item": [
+        {
+          "name": "Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/metrics",
+            "description": "Métriques Prometheus — format texte scrape-ready pour Grafana"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Contient métriques HTTP', () => {",
+                  "  pm.expect(pm.response.text()).to.include('http_requests_total');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Monitoring Health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/monitoring/health",
+            "description": "Statut du système de monitoring Evidently"
+          }
+        },
+        {
+          "name": "Drift Status (dernier résultat)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/monitoring/drift",
+            "description": "Retourne le dernier résultat de détection de drift"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Alert level présent', () => {",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(['ok','warning','critical']).to.include(body.alert_level);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Drift — Run en temps réel",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/monitoring/drift/run",
+            "description": "Lance une détection de drift en temps réel"
+          }
+        },
+        {
+          "name": "Drift Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/monitoring/drift/logs?limit=10",
+              "query": [{"key": "limit", "value": "10"}]
+            },
+            "description": "Historique des 10 dernières détections de drift"
+          }
+        }
+      ]
+    }
+  ]
+}
