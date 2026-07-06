@@ -7,8 +7,8 @@ test:
 	pytest -q
 
 api:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
+	uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+	
 preprocess:
 	python src/preprocess.py
 

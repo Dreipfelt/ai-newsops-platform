@@ -57,3 +57,10 @@ models/distilbert/checkpoints/
 dashboard_env/
 docker-compose.yml.bak
 dashboard/streamlit_app.py
+
+# Build artifacts & context files
+*.old
+export_*.js
+export_*.py
+project_context_*.md
+.python-version
