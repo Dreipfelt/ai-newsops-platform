@@ -1,0 +1,5 @@
+outs:
+- md5: 5a5df9910b757c985d3acc4cb1aac456
+  size: 275
+  hash: md5
+  path: label_mapping.json
