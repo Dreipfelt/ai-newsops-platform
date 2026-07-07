@@ -92,7 +92,7 @@ check "Streamlit accessible"                   "curl -sf http://localhost:8501"
 
 echo -e "\n── 10. Airflow ───────────────────────────────────────────"
 check "Airflow webserver accessible"           "curl -sf http://localhost:8080/health"
-warn_check "DAG news_classifier_retraining existe" "docker exec newsops-airflow-webserver airflow dags list 2>/dev/null | grep -q news_classifier_retraining"
+warn_check "DAG newsops_retraining_pipeline existe" "docker exec newsops-airflow-webserver airflow dags list 2>/dev/null | grep -q news_classifier_retraining"
 
 echo -e "\n── 11. Données & modèle ──────────────────────────────────"
 check "train.parquet existe"                   "test -f data/processed/train.parquet"
