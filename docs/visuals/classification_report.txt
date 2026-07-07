@@ -1,0 +1,19 @@
+                  precision    recall  f1-score   support
+
+    arts_culture       0.57      0.48      0.52        33
+        business       0.69      0.58      0.63        79
+           crime       0.64      0.61      0.62        38
+   entertainment       0.77      0.78      0.77       245
+family_education       0.70      0.78      0.73       130
+ health_wellness       0.75      0.80      0.78       251
+   international       0.56      0.44      0.49        62
+       lifestyle       0.82      0.81      0.82       330
+           media       0.60      0.59      0.59       179
+           other       0.83      0.68      0.75        85
+        politics       0.80      0.86      0.83       444
+          sports       0.72      0.64      0.68        53
+    tech_science       0.61      0.61      0.61        71
+
+        accuracy                           0.75      2000
+       macro avg       0.70      0.67      0.68      2000
+    weighted avg       0.74      0.75      0.74      2000
