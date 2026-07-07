@@ -18,7 +18,6 @@ import warnings
 from pathlib import Path
 
 import optuna
-from optuna.integration.mlflow import MLflowCallback
 import mlflow
 import pandas as pd
 import torch
@@ -135,35 +134,51 @@ def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, b
         f"dropout={dropout:.2f} warmup={warmup_ratio:.2f}"
     )
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size_fixed, shuffle=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size_fixed * 2, shuffle=False)
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_experiment("news-classifier-optuna-tuning")
 
-    model = DistilBertForSequenceClassification.from_pretrained(
-        "distilbert-base-uncased",
-        num_labels=num_labels,
-        id2label=id2label,
-        label2id={v: k for k, v in id2label.items()},
-        dropout=dropout,
-        seq_classif_dropout=dropout,
-    ).to(DEVICE)
+    with mlflow.start_run(run_name=f"trial-{trial.number}", nested=False):
+        mlflow.log_params({
+            "learning_rate": lr,
+            "weight_decay": weight_decay,
+            "dropout": dropout,
+            "warmup_ratio": warmup_ratio,
+            "trial_number": trial.number,
+        })
 
-    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    total_steps = len(train_loader) * epochs_per_trial
-    warmup_steps = int(warmup_ratio * total_steps)
-    scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+        train_loader = DataLoader(train_ds, batch_size=batch_size_fixed, shuffle=True)
+        val_loader = DataLoader(val_ds, batch_size=batch_size_fixed * 2, shuffle=False)
 
-    best_f1 = 0.0
-    for epoch in range(epochs_per_trial):
-        train_loss = train_one_epoch(model, train_loader, optimizer, scheduler)
-        val_f1 = evaluate(model, val_loader)
-        best_f1 = max(best_f1, val_f1)
+        model = DistilBertForSequenceClassification.from_pretrained(
+            "distilbert-base-uncased",
+            num_labels=num_labels,
+            id2label=id2label,
+            label2id={v: k for k, v in id2label.items()},
+            dropout=dropout,
+            seq_classif_dropout=dropout,
+        ).to(DEVICE)
 
-        log.info(f"  Trial {trial.number} epoch {epoch+1}: loss={train_loss:.4f} f1={val_f1:.4f}")
+        optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        total_steps = len(train_loader) * epochs_per_trial
+        warmup_steps = int(warmup_ratio * total_steps)
+        scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
 
-        # Pruning : arrêter les trials clairement mauvais avant la fin
-        trial.report(val_f1, epoch)
-        if trial.should_prune():
-            raise optuna.TrialPruned()
+        best_f1 = 0.0
+        for epoch in range(epochs_per_trial):
+            train_loss = train_one_epoch(model, train_loader, optimizer, scheduler)
+            val_f1 = evaluate(model, val_loader)
+            best_f1 = max(best_f1, val_f1)
+
+            mlflow.log_metrics({"train_loss": train_loss, "val_f1_macro": val_f1}, step=epoch)
+            log.info(f"  Trial {trial.number} epoch {epoch+1}: loss={train_loss:.4f} f1={val_f1:.4f}")
+
+            # Pruning : arrêter les trials clairement mauvais avant la fin
+            trial.report(val_f1, epoch)
+            if trial.should_prune():
+                mlflow.log_metric("pruned", 1)
+                raise optuna.TrialPruned()
+
+        mlflow.log_metric("best_val_f1", best_f1)
 
     return best_f1
 
@@ -181,16 +196,6 @@ def main(args):
     train_ds = NewsDataset(train_df, tokenizer)
     val_ds = NewsDataset(val_df, tokenizer)
 
-    mlflow.set_experiment("news-classifier-optuna-tuning")
-
-    # Callback MLflow : chaque trial devient un run MLflow, comparable dans l'UI
-    mlflc = MLflowCallback(
-        tracking_uri=mlflow.get_tracking_uri(),
-        metric_name="val_f1_macro",
-        create_experiment=False,
-        mlflow_kwargs={"nested": False},
-    )
-
     study = optuna.create_study(
         study_name="distilbert_newsops_tuning",
         direction="maximize",
@@ -204,7 +209,6 @@ def main(args):
             args.epochs_per_trial, args.batch_size,
         ),
         n_trials=args.n_trials,
-        callbacks=[mlflc],
         show_progress_bar=True,
     )
 
