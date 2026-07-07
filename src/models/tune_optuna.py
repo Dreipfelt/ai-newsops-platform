@@ -50,8 +50,11 @@ torch.set_num_threads(12)
 class NewsDataset(Dataset):
     def __init__(self, df, tokenizer, max_length=128):
         enc = tokenizer(
-            df["text"].tolist(), max_length=max_length,
-            padding="max_length", truncation=True, return_tensors="pt",
+            df["text"].tolist(),
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt",
         )
         self.input_ids = enc["input_ids"]
         self.attention_mask = enc["attention_mask"]
@@ -112,13 +115,17 @@ def evaluate(model, loader):
     model.eval()
     preds, labels = [], []
     for batch in loader:
-        out = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+        out = model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        )
         preds.extend(torch.argmax(out.logits, dim=-1).numpy())
         labels.extend(batch["label"].numpy())
     return f1_score(labels, preds, average="macro")
 
 
-def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, batch_size_fixed):
+def objective(
+    trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, batch_size_fixed
+):
     """
     Fonction objectif Optuna : entraîne un modèle avec des hyperparamètres
     échantillonnés et retourne le F1 macro de validation à maximiser.
@@ -138,13 +145,15 @@ def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, b
     mlflow.set_experiment("news-classifier-optuna-tuning")
 
     with mlflow.start_run(run_name=f"trial-{trial.number}", nested=False):
-        mlflow.log_params({
-            "learning_rate": lr,
-            "weight_decay": weight_decay,
-            "dropout": dropout,
-            "warmup_ratio": warmup_ratio,
-            "trial_number": trial.number,
-        })
+        mlflow.log_params(
+            {
+                "learning_rate": lr,
+                "weight_decay": weight_decay,
+                "dropout": dropout,
+                "warmup_ratio": warmup_ratio,
+                "trial_number": trial.number,
+            }
+        )
 
         train_loader = DataLoader(train_ds, batch_size=batch_size_fixed, shuffle=True)
         val_loader = DataLoader(val_ds, batch_size=batch_size_fixed * 2, shuffle=False)
@@ -161,7 +170,9 @@ def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, b
         optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         total_steps = len(train_loader) * epochs_per_trial
         warmup_steps = int(warmup_ratio * total_steps)
-        scheduler = get_linear_schedule_with_warmup(optimizer, warmup_steps, total_steps)
+        scheduler = get_linear_schedule_with_warmup(
+            optimizer, warmup_steps, total_steps
+        )
 
         best_f1 = 0.0
         for epoch in range(epochs_per_trial):
@@ -169,8 +180,12 @@ def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, b
             val_f1 = evaluate(model, val_loader)
             best_f1 = max(best_f1, val_f1)
 
-            mlflow.log_metrics({"train_loss": train_loss, "val_f1_macro": val_f1}, step=epoch)
-            log.info(f"  Trial {trial.number} epoch {epoch+1}: loss={train_loss:.4f} f1={val_f1:.4f}")
+            mlflow.log_metrics(
+                {"train_loss": train_loss, "val_f1_macro": val_f1}, step=epoch
+            )
+            log.info(
+                f"  Trial {trial.number} epoch {epoch+1}: loss={train_loss:.4f} f1={val_f1:.4f}"
+            )
 
             # Pruning : arrêter les trials clairement mauvais avant la fin
             trial.report(val_f1, epoch)
@@ -185,7 +200,9 @@ def objective(trial, train_ds, val_ds, num_labels, id2label, epochs_per_trial, b
 
 def main(args):
     log.info("=== Hyperparameter Tuning Optuna — DistilBERT ===")
-    log.info(f"Trials: {args.n_trials} | Epochs/trial: {args.epochs_per_trial} | Fast mode: {args.fast}")
+    log.info(
+        f"Trials: {args.n_trials} | Epochs/trial: {args.epochs_per_trial} | Fast mode: {args.fast}"
+    )
 
     train_df, val_df, id2label = load_data(fast=args.fast, sample_frac=args.sample_frac)
     num_labels = len(id2label)
@@ -205,8 +222,13 @@ def main(args):
 
     study.optimize(
         lambda trial: objective(
-            trial, train_ds, val_ds, num_labels, id2label,
-            args.epochs_per_trial, args.batch_size,
+            trial,
+            train_ds,
+            val_ds,
+            num_labels,
+            id2label,
+            args.epochs_per_trial,
+            args.batch_size,
         ),
         n_trials=args.n_trials,
         show_progress_bar=True,
@@ -267,17 +289,33 @@ def main(args):
     for k, v in study.best_params.items():
         if k == "learning_rate":
             print(f"     --lr {v} \\")
-    print(f"   (weight_decay={study.best_params.get('weight_decay'):.3f}, "
-          f"dropout={study.best_params.get('dropout'):.3f} à ajouter dans train_cpu.py)")
+    print(
+        f"   (weight_decay={study.best_params.get('weight_decay'):.3f}, "
+        f"dropout={study.best_params.get('dropout'):.3f} à ajouter dans train_cpu.py)"
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Hyperparameter tuning Optuna pour DistilBERT")
-    parser.add_argument("--n-trials", type=int, default=10, help="Nombre d'essais Optuna")
-    parser.add_argument("--epochs-per-trial", type=int, default=1, help="Epochs par essai")
+    parser = argparse.ArgumentParser(
+        description="Hyperparameter tuning Optuna pour DistilBERT"
+    )
+    parser.add_argument(
+        "--n-trials", type=int, default=10, help="Nombre d'essais Optuna"
+    )
+    parser.add_argument(
+        "--epochs-per-trial", type=int, default=1, help="Epochs par essai"
+    )
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--sample-frac", type=float, default=0.10,
-                        help="Fraction du train set utilisée par essai (recherche rapide)")
-    parser.add_argument("--fast", action="store_true", default=True,
-                        help="Mode rapide — sous-échantillonnage (recommandé pour Optuna)")
+    parser.add_argument(
+        "--sample-frac",
+        type=float,
+        default=0.10,
+        help="Fraction du train set utilisée par essai (recherche rapide)",
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        default=True,
+        help="Mode rapide — sous-échantillonnage (recommandé pour Optuna)",
+    )
     main(parser.parse_args())
