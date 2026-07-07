@@ -78,23 +78,23 @@ docker-compose ps
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│                           AI NewsOps Platform                                     │
-│                                                                                    │
+│                           AI NewsOps Platform                                    │
+│                                                                                  │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌────────────────────┐ │
-│  │    DATA      │    │   TRAINING   │    │  DEPLOYMENT  │    │    OPERATIONS      │ │
+│  │    DATA     │    │   TRAINING  │    │  DEPLOYMENT │    │    OPERATIONS      │ │
 │  │             │    │             │    │             │    │                    │ │
-│  │ Kaggle API  │───▶│ DistilBERT  │───▶│  FastAPI    │───▶│  Prometheus        │ │
+│  │ Kaggle API  │──▶│ DistilBERT  │──▶│  FastAPI    │──▶│  Prometheus        │ │
 │  │ DVC         │    │ HuggingFace │    │  Docker     │    │  Grafana           │ │
 │  │ Parquet     │    │ MLflow      │    │  Compose    │    │  Evidently AI      │ │
 │  │ 208k arts.  │    │             │    │  GH Actions │    │  Streamlit         │ │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └────────────────────┘ │
-│                                                                     │              │
-│                                                                     ▼              │
-│                                                        ┌────────────────────┐     │
-│                                                        │  Apache Airflow    │     │
-│                                                        │  Weekly retraining │     │
-│                                                        │  Champion/challenger│     │
-│                                                        └────────────────────┘     │
+│                                                                     │            │
+│                                                                     ▼            │
+│                                                        ┌─────────────────── ┐    │
+│                                                        │  Apache Airflow    │    │
+│                                                        │  Weekly retraining │    │
+│                                                        │ Champion/challenger│    │
+│                                                        └────────────────────┘    │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
