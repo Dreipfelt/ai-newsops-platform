@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: "newsops-monitor"
+
+scrape_configs:
+  # Les 3 réplicas sont scrapés individuellement — Grafana peut donc
+  # afficher la charge par réplica en plus de l'agrégat via le label "instance"
+  - job_name: "newsops-api"
+    static_configs:
+      - targets: ["api1:8000", "api2:8000", "api3:8000"]
+    metrics_path: "/metrics"
+    scrape_interval: 15s
+
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["nginx:80"]
+    metrics_path: "/nginx-health"
+    scrape_interval: 15s
+
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
