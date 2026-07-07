@@ -348,7 +348,7 @@ app = FastAPI(
     version=MODEL_VERSION,
 )
 
-Instrumentator().instrument(app).expose(app, include_in_schema=False)
+Instrumentator().instrument(app)
 
 app.add_middleware(
     CORSMiddleware,
