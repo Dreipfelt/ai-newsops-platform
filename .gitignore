@@ -64,3 +64,6 @@ export_*.js
 export_*.py
 project_context_*.md
 .python-version
+
+# Dossier de travail présentation — jamais versionné
+presentation/
