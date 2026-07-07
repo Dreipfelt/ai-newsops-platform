@@ -4,8 +4,6 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 
-data/
-datasets/
 artifacts/
 mlruns/
 outputs/
@@ -67,3 +65,9 @@ project_context_*.md
 
 # Dossier de travail présentation — jamais versionné
 presentation/
+
+
+# Data — ignorer le contenu mais pas les fichiers DVC
+data/**
+!data/**/.gitignore
+!data/**/*.dvc
