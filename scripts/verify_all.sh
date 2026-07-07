@@ -60,7 +60,7 @@ check "Tests pytest — 34 tests passent"        "pytest tests/ -q"
 
 echo -e "\n── 3. Docker Compose — 8 services ────────────────────────"
 check "docker-compose config valide"           "docker-compose config --quiet"
-check "Tous les containers Up"                 "test \$(docker-compose ps --status running -q | wc -l) -ge 7"
+check "Tous les containers Up"                 "test \$(docker compose --profile airflow ps --status running -q | wc -l) -ge 7"
 
 echo -e "\n── 4. API FastAPI ────────────────────────────────────────"
 check "GET /health retourne 200"               "curl -sf http://localhost:8000/health"
