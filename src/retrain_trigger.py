@@ -31,7 +31,11 @@ def extract_drift_score(report: dict) -> float:
 def build_decision(report: dict, threshold: float, force: bool = False) -> dict:
     score = extract_drift_score(report)
     should_retrain = force or score >= threshold or bool(report.get("drift_detected"))
-    reason = "forced" if force else "drift_threshold_exceeded" if should_retrain else "no_significant_drift"
+    reason = (
+        "forced"
+        if force
+        else "drift_threshold_exceeded" if should_retrain else "no_significant_drift"
+    )
     return {
         "should_retrain": should_retrain,
         "reason": reason,

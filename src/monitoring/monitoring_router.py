@@ -19,16 +19,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
 
-MONITORING_DIR  = Path("monitoring")
-REPORTS_DIR     = MONITORING_DIR / "reports"
-DRIFT_LOG       = MONITORING_DIR / "drift_log.jsonl"
-ALERT_LOG       = MONITORING_DIR / "alerts.jsonl"
-QUICK_DRIFT     = MONITORING_DIR / "quick_drift_latest.json"
+MONITORING_DIR = Path("monitoring")
+REPORTS_DIR = MONITORING_DIR / "reports"
+DRIFT_LOG = MONITORING_DIR / "drift_log.jsonl"
+ALERT_LOG = MONITORING_DIR / "alerts.jsonl"
+QUICK_DRIFT = MONITORING_DIR / "quick_drift_latest.json"
 
 DATA_DIR = Path("data/processed")
 
@@ -37,35 +37,37 @@ DATA_DIR = Path("data/processed")
 # SCHEMAS
 # ─────────────────────────────────────────────────────────────
 
+
 class DriftCheckResponse(BaseModel):
-    timestamp:        str
-    n_drifted:        int
-    n_features:       int
-    drift_share:      float
-    alert_level:      str
-    reference_size:   int
-    production_size:  int
-    features:         dict
+    timestamp: str
+    n_drifted: int
+    n_features: int
+    drift_share: float
+    alert_level: str
+    reference_size: int
+    production_size: int
+    features: dict
 
 
 class MonitoringCheckRequest(BaseModel):
-    batch_size:       int = 500
-    avg_latency_ms:   float = 0.0
-    n_requests:       int = 0
-    n_errors:         int = 0
-    run_full_report:  bool = False
+    batch_size: int = 500
+    avg_latency_ms: float = 0.0
+    n_requests: int = 0
+    n_errors: int = 0
+    run_full_report: bool = False
 
 
 class MonitoringCheckResponse(BaseModel):
-    timestamp:    str
-    n_alerts:     int
-    alerts:       list
+    timestamp: str
+    n_alerts: int
+    alerts: list
     drift_result: Optional[dict] = None
 
 
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
+
 
 def _load_splits():
     """Charge référence et production pour les checks."""
@@ -77,9 +79,7 @@ def _load_splits():
             detail="Données de référence non disponibles. Lancer le preprocessing d'abord.",
         )
 
-    ref  = pd.read_parquet(DATA_DIR / "train.parquet").sample(
-        n=2000, random_state=42
-    )
+    ref = pd.read_parquet(DATA_DIR / "train.parquet").sample(n=2000, random_state=42)
     prod = pd.read_parquet(DATA_DIR / "test.parquet").sample(
         n=500, random_state=int(datetime.now().timestamp()) % 1000
     )
@@ -89,8 +89,8 @@ def _load_splits():
 
     for df in [ref, prod]:
         df["category_name"] = df["label"].map(id2label)
-        df["text_length"]   = df["text"].str.len()
-        df["word_count"]    = df["text"].str.split().str.len()
+        df["text_length"] = df["text"].str.len()
+        df["word_count"] = df["text"].str.split().str.len()
 
     return (
         ref[["text", "text_length", "word_count", "category_name", "label"]],
@@ -101,15 +101,15 @@ def _load_splits():
 def _run_drift_background(batch_size: int, run_full: bool):
     """Tâche de fond pour ne pas bloquer l'API."""
     try:
-        from src.monitoring.drift_detector import (
-            load_reference_data,
-            load_production_data,
-            quick_drift_check,
-            generate_drift_report,
-        )
         from src.monitoring.alerts import check_drift_alert, send_alert
+        from src.monitoring.drift_detector import (
+            generate_drift_report,
+            load_production_data,
+            load_reference_data,
+            quick_drift_check,
+        )
 
-        ref  = load_reference_data(sample_size=2000)
+        ref = load_reference_data(sample_size=2000)
         prod = load_production_data(batch_size=batch_size)
         result = quick_drift_check(ref, prod)
 
@@ -129,12 +129,14 @@ def _run_drift_background(batch_size: int, run_full: bool):
     except Exception as e:
         # Log l'erreur sans crasher l'API
         import logging
+
         logging.getLogger(__name__).error(f"Erreur drift background : {e}")
 
 
 # ─────────────────────────────────────────────────────────────
 # ENDPOINTS
 # ─────────────────────────────────────────────────────────────
+
 
 @router.get(
     "/drift",
@@ -154,7 +156,7 @@ def get_drift():
             cached = json.load(f)
         # Vérifier l'âge
         try:
-            ts  = datetime.fromisoformat(cached["timestamp"])
+            ts = datetime.fromisoformat(cached["timestamp"])
             age = (datetime.now() - ts).total_seconds()
             if age < 3600:  # < 1h → retourner le cache
                 return cached
@@ -217,6 +219,7 @@ def run_monitoring_check(
         drift_result = None
         try:
             from src.monitoring.drift_detector import quick_drift_check
+
             ref, prod = _load_splits()
             drift_result = quick_drift_check(ref, prod)
             with open(QUICK_DRIFT, "w") as f:
@@ -242,9 +245,9 @@ def run_monitoring_check(
             )
 
         return {
-            "timestamp":    datetime.now().isoformat(),
-            "n_alerts":     len(alerts),
-            "alerts":       alerts,
+            "timestamp": datetime.now().isoformat(),
+            "n_alerts": len(alerts),
+            "alerts": alerts,
             "drift_result": drift_result,
         }
 
@@ -270,11 +273,12 @@ def get_alerts(last_n: int = 20):
     """
     try:
         from src.monitoring.alerts import get_alert_history
+
         alerts = get_alert_history(last_n=last_n)
         return {
-            "n_alerts":  len(alerts),
-            "last_n":    last_n,
-            "alerts":    alerts,
+            "n_alerts": len(alerts),
+            "last_n": last_n,
+            "alerts": alerts,
         }
     except ImportError:
         # Fallback sans le module alerts
@@ -287,7 +291,11 @@ def get_alerts(last_n: int = 20):
                     alerts.append(json.loads(line.strip()))
                 except json.JSONDecodeError:
                     continue
-        return {"n_alerts": len(alerts[-last_n:]), "last_n": last_n, "alerts": alerts[-last_n:]}
+        return {
+            "n_alerts": len(alerts[-last_n:]),
+            "last_n": last_n,
+            "alerts": alerts[-last_n:],
+        }
 
 
 @router.get(
@@ -301,24 +309,26 @@ def get_latest_report():
     Pour générer un nouveau rapport : POST /monitoring/check avec run_full_report=true.
     """
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    reports = sorted(REPORTS_DIR.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True)
+    reports = sorted(
+        REPORTS_DIR.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
 
     if not reports:
         return {
-            "available":  False,
-            "message":    "Aucun rapport disponible. Lancer POST /monitoring/check avec run_full_report=true.",
+            "available": False,
+            "message": "Aucun rapport disponible. Lancer POST /monitoring/check avec run_full_report=true.",
         }
 
     latest = reports[0]
     return {
-        "available":    True,
-        "report_name":  latest.name,
-        "report_path":  str(latest),
+        "available": True,
+        "report_name": latest.name,
+        "report_path": str(latest),
         "generated_at": datetime.fromtimestamp(latest.stat().st_mtime).isoformat(),
-        "size_kb":      round(latest.stat().st_size / 1024, 1),
-        "n_reports":    len(reports),
-        "all_reports":  [r.name for r in reports[:5]],
-        "message":      "Ouvrir le fichier HTML directement dans un navigateur.",
+        "size_kb": round(latest.stat().st_size / 1024, 1),
+        "n_reports": len(reports),
+        "all_reports": [r.name for r in reports[:5]],
+        "message": "Ouvrir le fichier HTML directement dans un navigateur.",
     }
 
 
@@ -337,8 +347,8 @@ def get_monitoring_status():
         with open(QUICK_DRIFT) as f:
             drift_data = json.load(f)
         drift_status = {
-            "available":   True,
-            "last_check":  drift_data.get("timestamp"),
+            "available": True,
+            "last_check": drift_data.get("timestamp"),
             "alert_level": drift_data.get("alert_level"),
             "drift_share": drift_data.get("drift_share"),
         }
@@ -367,19 +377,21 @@ def get_monitoring_status():
             modules[mod] = "non installé"
 
     return {
-        "timestamp":     datetime.now().isoformat(),
-        "drift":         drift_status,
+        "timestamp": datetime.now().isoformat(),
+        "drift": drift_status,
         "alerts": {
-            "total":    n_alerts,
+            "total": n_alerts,
             "critical": n_critical,
         },
         "reports": {
-            "n_reports": len(list(REPORTS_DIR.glob("*.html"))) if REPORTS_DIR.exists() else 0,
+            "n_reports": (
+                len(list(REPORTS_DIR.glob("*.html"))) if REPORTS_DIR.exists() else 0
+            ),
         },
-        "modules":      modules,
+        "modules": modules,
         "config": {
-            "drift_threshold":    0.15,
-            "latency_threshold":  "500ms",
+            "drift_threshold": 0.15,
+            "latency_threshold": "500ms",
             "error_rate_threshold": "5%",
         },
     }

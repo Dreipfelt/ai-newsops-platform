@@ -12,15 +12,15 @@ Usage :
   python src/monitoring/drift_detector.py --full-report
 """
 
+import argparse
 import json
 import logging
-import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from scipy import stats
 
 logging.basicConfig(
@@ -33,24 +33,25 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────
-DATA_DIR        = Path("data/processed")
-MONITORING_DIR  = Path("monitoring")
-REPORTS_DIR     = MONITORING_DIR / "reports"
-DRIFT_LOG       = MONITORING_DIR / "drift_log.jsonl"
-QUICK_DRIFT     = MONITORING_DIR / "quick_drift_latest.json"
+DATA_DIR = Path("data/processed")
+MONITORING_DIR = Path("monitoring")
+REPORTS_DIR = MONITORING_DIR / "reports"
+DRIFT_LOG = MONITORING_DIR / "drift_log.jsonl"
+QUICK_DRIFT = MONITORING_DIR / "quick_drift_latest.json"
 
 MONITORING_DIR.mkdir(exist_ok=True)
 REPORTS_DIR.mkdir(exist_ok=True)
 
 # Seuils d'alerte
-DRIFT_SHARE_THRESHOLD    = 0.15   # >15% de features driftées → alerte
+DRIFT_SHARE_THRESHOLD = 0.15  # >15% de features driftées → alerte
 TEXT_LENGTH_DRIFT_PVALUE = 0.05
-CATEGORY_DRIFT_PVALUE    = 0.05
+CATEGORY_DRIFT_PVALUE = 0.05
 
 
 # ─────────────────────────────────────────────────────────────
 # CHARGEMENT DES DONNÉES
 # ─────────────────────────────────────────────────────────────
+
 
 def load_reference_data(sample_size: int = 2000) -> pd.DataFrame:
     """Charge les données de référence (train set)."""
@@ -63,8 +64,8 @@ def load_reference_data(sample_size: int = 2000) -> pd.DataFrame:
 
     ref = ref.copy()
     ref["category_name"] = ref["label"].map(id2label)
-    ref["text_length"]   = ref["text"].str.len()
-    ref["word_count"]    = ref["text"].str.split().str.len()
+    ref["text_length"] = ref["text"].str.len()
+    ref["word_count"] = ref["text"].str.split().str.len()
 
     log.info(f"Référence chargée : {len(ref):,} exemples")
     return ref[["text", "text_length", "word_count", "category_name", "label"]]
@@ -74,8 +75,7 @@ def load_production_data(batch_size: int = 500) -> pd.DataFrame:
     """Simule les données de production depuis le test set."""
     df = pd.read_parquet(DATA_DIR / "test.parquet")
     prod = df.sample(
-        n=min(batch_size, len(df)),
-        random_state=int(datetime.now().timestamp()) % 1000
+        n=min(batch_size, len(df)), random_state=int(datetime.now().timestamp()) % 1000
     )
 
     with open(DATA_DIR / "label_mapping.json") as f:
@@ -84,8 +84,8 @@ def load_production_data(batch_size: int = 500) -> pd.DataFrame:
 
     prod = prod.copy()
     prod["category_name"] = prod["label"].map(id2label)
-    prod["text_length"]   = prod["text"].str.len()
-    prod["word_count"]    = prod["text"].str.split().str.len()
+    prod["text_length"] = prod["text"].str.len()
+    prod["word_count"] = prod["text"].str.split().str.len()
 
     log.info(f"Production chargée : {len(prod):,} exemples")
     return prod[["text", "text_length", "word_count", "category_name", "label"]]
@@ -94,6 +94,7 @@ def load_production_data(batch_size: int = 500) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────
 # DRIFT CHECK RAPIDE — scipy (principal)
 # ─────────────────────────────────────────────────────────────
+
 
 def quick_drift_check(
     reference: pd.DataFrame,
@@ -114,9 +115,9 @@ def quick_drift_check(
         production["text_length"].values,
     )
     results["text_length"] = {
-        "test":           "kolmogorov-smirnov",
-        "statistic":      round(float(ks_stat), 4),
-        "p_value":        round(float(ks_pval), 4),
+        "test": "kolmogorov-smirnov",
+        "statistic": round(float(ks_stat), 4),
+        "p_value": round(float(ks_pval), 4),
         "drift_detected": bool(ks_pval < TEXT_LENGTH_DRIFT_PVALUE),
         "interpretation": "Longueur des textes en production",
     }
@@ -127,39 +128,39 @@ def quick_drift_check(
         production["word_count"].values,
     )
     results["word_count"] = {
-        "test":           "kolmogorov-smirnov",
-        "statistic":      round(float(ks_stat2), 4),
-        "p_value":        round(float(ks_pval2), 4),
+        "test": "kolmogorov-smirnov",
+        "statistic": round(float(ks_stat2), 4),
+        "p_value": round(float(ks_pval2), 4),
         "drift_detected": bool(ks_pval2 < TEXT_LENGTH_DRIFT_PVALUE),
         "interpretation": "Nombre de mots par article",
     }
 
     # ── Chi² sur la distribution des catégories ──────────────
-    ref_counts  = reference["category_name"].value_counts()
+    ref_counts = reference["category_name"].value_counts()
     prod_counts = production["category_name"].value_counts()
-    all_cats    = sorted(set(ref_counts.index) | set(prod_counts.index))
+    all_cats = sorted(set(ref_counts.index) | set(prod_counts.index))
 
-    ref_freq  = np.array([ref_counts.get(c, 0) for c in all_cats], dtype=float)
+    ref_freq = np.array([ref_counts.get(c, 0) for c in all_cats], dtype=float)
     prod_freq = np.array([prod_counts.get(c, 0) for c in all_cats], dtype=float)
 
     # Normaliser pour avoir des fréquences attendues proportionnelles
-    ref_freq  = np.maximum(ref_freq, 1e-10)
-    expected  = ref_freq / ref_freq.sum() * prod_freq.sum()
-    expected  = np.maximum(expected, 1e-10)
+    ref_freq = np.maximum(ref_freq, 1e-10)
+    expected = ref_freq / ref_freq.sum() * prod_freq.sum()
+    expected = np.maximum(expected, 1e-10)
 
     chi2_stat, chi2_pval = stats.chisquare(prod_freq, f_exp=expected)
     results["category_distribution"] = {
-        "test":           "chi-squared",
-        "statistic":      round(float(chi2_stat), 4),
-        "p_value":        round(float(chi2_pval), 4),
+        "test": "chi-squared",
+        "statistic": round(float(chi2_stat), 4),
+        "p_value": round(float(chi2_pval), 4),
         "drift_detected": bool(chi2_pval < CATEGORY_DRIFT_PVALUE),
         "interpretation": "Distribution des catégories prédites",
-        "top_categories_ref":  ref_counts.head(5).to_dict(),
+        "top_categories_ref": ref_counts.head(5).to_dict(),
         "top_categories_prod": prod_counts.head(5).to_dict(),
     }
 
     # ── Résumé ───────────────────────────────────────────────
-    n_drifted   = sum(1 for v in results.values() if v["drift_detected"])
+    n_drifted = sum(1 for v in results.values() if v["drift_detected"])
     drift_share = n_drifted / len(results)
 
     alert_level = "ok"
@@ -169,16 +170,16 @@ def quick_drift_check(
         alert_level = "critical"
 
     summary = {
-        "timestamp":        datetime.now().isoformat(),
-        "n_drifted":        n_drifted,
-        "n_features":       len(results),
-        "drift_share":      round(drift_share, 3),
-        "alert_level":      alert_level,
-        "reference_size":   len(reference),
-        "production_size":  len(production),
-        "features":         results,
+        "timestamp": datetime.now().isoformat(),
+        "n_drifted": n_drifted,
+        "n_features": len(results),
+        "drift_share": round(drift_share, 3),
+        "alert_level": alert_level,
+        "reference_size": len(reference),
+        "production_size": len(production),
+        "features": results,
         "thresholds": {
-            "numerical_pvalue":  TEXT_LENGTH_DRIFT_PVALUE,
+            "numerical_pvalue": TEXT_LENGTH_DRIFT_PVALUE,
             "categorical_pvalue": CATEGORY_DRIFT_PVALUE,
             "drift_share_alert": DRIFT_SHARE_THRESHOLD,
         },
@@ -188,12 +189,17 @@ def quick_drift_check(
     with open(QUICK_DRIFT, "w") as f:
         json.dump(summary, f, indent=2)
     with open(DRIFT_LOG, "a") as f:
-        f.write(json.dumps({
-            "timestamp":   summary["timestamp"],
-            "alert_level": alert_level,
-            "drift_share": drift_share,
-            "n_drifted":   n_drifted,
-        }) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "timestamp": summary["timestamp"],
+                    "alert_level": alert_level,
+                    "drift_share": drift_share,
+                    "n_drifted": n_drifted,
+                }
+            )
+            + "\n"
+        )
 
     return summary
 
@@ -201,6 +207,7 @@ def quick_drift_check(
 # ─────────────────────────────────────────────────────────────
 # RAPPORT EVIDENTLY 0.7.x (optionnel, pour rapport HTML visuel)
 # ─────────────────────────────────────────────────────────────
+
 
 def generate_evidently_report(
     reference: pd.DataFrame,
@@ -212,15 +219,15 @@ def generate_evidently_report(
     Import lazy pour ne pas bloquer si Evidently n'est pas compatible.
     """
     try:
-        from evidently.report import Report
         from evidently.metric_preset import DataDriftPreset
+        from evidently.report import Report
 
-        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_name = report_name or f"drift_report_{timestamp}"
         report_path = REPORTS_DIR / f"{report_name}.html"
 
         # Colonnes numériques uniquement pour Evidently
-        ref_ev  = reference[["text_length", "word_count"]].copy()
+        ref_ev = reference[["text_length", "word_count"]].copy()
         prod_ev = production[["text_length", "word_count"]].copy()
 
         report = Report(metrics=[DataDriftPreset()])
@@ -242,23 +249,26 @@ def generate_evidently_report(
 # MAIN
 # ─────────────────────────────────────────────────────────────
 
+
 def main(args):
     log.info("=== Drift Detection — AI NewsOps Platform ===")
 
-    reference  = load_reference_data(sample_size=2000)
+    reference = load_reference_data(sample_size=2000)
     production = load_production_data(batch_size=args.batch_size)
 
     log.info("Vérification rapide (scipy KS + Chi²)...")
     result = quick_drift_check(reference, production)
 
-    print(f"\n── Résultat ──────────────────────────────────")
+    print("\n── Résultat ──────────────────────────────────")
     print(f"  Alert level       : {result['alert_level'].upper()}")
     print(f"  Features driftées : {result['n_drifted']}/{result['n_features']}")
     print(f"  Drift share       : {result['drift_share']:.1%}")
     print()
     for feat, res in result["features"].items():
         icon = "🔴" if res["drift_detected"] else "🟢"
-        print(f"  {icon} {feat:<30} p={res['p_value']:.4f}  stat={res['statistic']:.4f}")
+        print(
+            f"  {icon} {feat:<30} p={res['p_value']:.4f}  stat={res['statistic']:.4f}"
+        )
 
     if args.full_report:
         log.info("\nGénération rapport HTML Evidently...")
@@ -271,6 +281,6 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Détection de drift")
-    parser.add_argument("--batch-size",  type=int, default=500)
+    parser.add_argument("--batch-size", type=int, default=500)
     parser.add_argument("--full-report", action="store_true")
     main(parser.parse_args())

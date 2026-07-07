@@ -75,6 +75,7 @@ REFERENCE_DATA_PATH = DATA_DIR / "test.parquet"
 # Pydantic Schemas
 # ============================================================
 
+
 class PredictRequest(BaseModel):
     headline: str = Field(
         ...,
@@ -149,6 +150,7 @@ MODEL_ACCURACY = Gauge(
 # ============================================================
 # Model Monitor
 # ============================================================
+
 
 class ModelMonitor:
     """Lightweight Evidently-based drift monitor."""
@@ -250,15 +252,18 @@ class ModelMonitor:
                 prediction="prediction",
                 target="label" if "label" in current_df.columns else None,
                 numerical_features=[
-                    col for col in ["text_length", "word_count", "year"]
+                    col
+                    for col in ["text_length", "word_count", "year"]
                     if col in current_df.columns and col in reference_df.columns
                 ],
                 categorical_features=[
-                    col for col in ["category", "has_desc"]
+                    col
+                    for col in ["category", "has_desc"]
                     if col in current_df.columns and col in reference_df.columns
                 ],
                 text_features=[
-                    col for col in ["text_clean", "text"]
+                    col
+                    for col in ["text_clean", "text"]
                     if col in current_df.columns and col in reference_df.columns
                 ],
             )
@@ -472,6 +477,7 @@ def update_model_metrics() -> None:
 # Routes
 # ============================================================
 
+
 @app.get("/", tags=["Information"])
 async def root():
     ensure_model_loaded()
@@ -587,6 +593,7 @@ async def predict_batch(request: BatchPredictRequest):
 # ============================================================
 # Monitoring Routes
 # ============================================================
+
 
 @app.get("/monitoring/drift", tags=["Monitoring"])
 async def get_latest_drift_status():

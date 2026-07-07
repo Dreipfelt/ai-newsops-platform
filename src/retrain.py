@@ -27,7 +27,9 @@ def write_run_summary(output_path: Path, status: str, reason: str) -> None:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "mlflow_tracking_uri": os.getenv("MLFLOW_TRACKING_URI", ""),
     }
-    output_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    output_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
@@ -45,7 +47,9 @@ def main() -> None:
 
     decision = read_decision(Path(args.decision_file), args.force)
     if not decision.get("should_retrain", False):
-        write_run_summary(Path(args.output), "skipped", decision.get("reason", "not_required"))
+        write_run_summary(
+            Path(args.output), "skipped", decision.get("reason", "not_required")
+        )
         return
 
     result = subprocess.run(args.train_command, shell=True, check=False)
@@ -53,7 +57,9 @@ def main() -> None:
         write_run_summary(Path(args.output), "failed", "training_command_failed")
         sys.exit(result.returncode)
 
-    write_run_summary(Path(args.output), "completed", decision.get("reason", "scheduled"))
+    write_run_summary(
+        Path(args.output), "completed", decision.get("reason", "scheduled")
+    )
 
 
 if __name__ == "__main__":

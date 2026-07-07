@@ -21,10 +21,10 @@ import os
 import smtplib
 import urllib.request
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from enum import Enum
 from pathlib import Path
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from typing import Optional
 
 log = logging.getLogger(__name__)
@@ -33,36 +33,36 @@ log = logging.getLogger(__name__)
 # CONFIG
 # ─────────────────────────────────────────────────────────────
 MONITORING_DIR = Path("monitoring")
-ALERT_LOG      = MONITORING_DIR / "alerts.jsonl"
+ALERT_LOG = MONITORING_DIR / "alerts.jsonl"
 MONITORING_DIR.mkdir(exist_ok=True)
 
 # Chargés depuis les variables d'environnement (jamais en dur dans le code)
-WEBHOOK_URL    = os.getenv("ALERT_WEBHOOK_URL", "")   # Slack/Teams/Discord webhook
-ALERT_EMAIL    = os.getenv("ALERT_EMAIL", "")          # destinataire email
-SMTP_HOST      = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT      = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER      = os.getenv("SMTP_USER", "")
-SMTP_PASS      = os.getenv("SMTP_PASS", "")
+WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "")  # Slack/Teams/Discord webhook
+ALERT_EMAIL = os.getenv("ALERT_EMAIL", "")  # destinataire email
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
 
 # Seuils
-LATENCY_THRESHOLD_MS   = 500.0
-ERROR_RATE_THRESHOLD   = 0.05
-DRIFT_SHARE_THRESHOLD  = 0.15
-F1_MIN_THRESHOLD       = 0.60
+LATENCY_THRESHOLD_MS = 500.0
+ERROR_RATE_THRESHOLD = 0.05
+DRIFT_SHARE_THRESHOLD = 0.15
+F1_MIN_THRESHOLD = 0.60
 
 
 # ─────────────────────────────────────────────────────────────
 # NIVEAUX D'ALERTE
 # ─────────────────────────────────────────────────────────────
 class AlertLevel(str, Enum):
-    INFO     = "info"
-    WARNING  = "warning"
+    INFO = "info"
+    WARNING = "warning"
     CRITICAL = "critical"
 
 
 LEVEL_EMOJI = {
-    AlertLevel.INFO:     "ℹ️",
-    AlertLevel.WARNING:  "⚠️",
+    AlertLevel.INFO: "ℹ️",
+    AlertLevel.WARNING: "⚠️",
     AlertLevel.CRITICAL: "🔴",
 }
 
@@ -78,25 +78,25 @@ class Alert:
         message: str,
         metrics: Optional[dict] = None,
     ):
-        self.level     = level
-        self.title     = title
-        self.message   = message
-        self.metrics   = metrics or {}
+        self.level = level
+        self.title = title
+        self.message = message
+        self.metrics = metrics or {}
         self.timestamp = datetime.now().isoformat()
 
     def to_dict(self) -> dict:
         return {
             "timestamp": self.timestamp,
-            "level":     self.level.value,
-            "title":     self.title,
-            "message":   self.message,
-            "metrics":   self.metrics,
+            "level": self.level.value,
+            "title": self.title,
+            "message": self.message,
+            "metrics": self.metrics,
         }
 
     def to_slack_payload(self) -> dict:
         """Formatte l'alerte pour Slack (webhook)."""
-        emoji  = LEVEL_EMOJI.get(self.level, "📊")
-        color  = {"info": "#36a64f", "warning": "#ff9500", "critical": "#ff0000"}.get(
+        emoji = LEVEL_EMOJI.get(self.level, "📊")
+        color = {"info": "#36a64f", "warning": "#ff9500", "critical": "#ff0000"}.get(
             self.level.value, "#888888"
         )
         fields = [
@@ -104,14 +104,16 @@ class Alert:
             for k, v in self.metrics.items()
         ]
         return {
-            "attachments": [{
-                "color":      color,
-                "title":      f"{emoji} {self.title}",
-                "text":       self.message,
-                "fields":     fields,
-                "footer":     "AI NewsOps Platform · MLOps Monitoring",
-                "ts":         int(datetime.now().timestamp()),
-            }]
+            "attachments": [
+                {
+                    "color": color,
+                    "title": f"{emoji} {self.title}",
+                    "text": self.message,
+                    "fields": fields,
+                    "footer": "AI NewsOps Platform · MLOps Monitoring",
+                    "ts": int(datetime.now().timestamp()),
+                }
+            ]
         }
 
     def format_email_body(self) -> str:
@@ -139,6 +141,7 @@ Ce message est généré automatiquement par le système de monitoring MLOps.
 # ENVOI D'ALERTES
 # ─────────────────────────────────────────────────────────────
 
+
 def send_alert(alert: Alert) -> dict:
     """
     Envoie une alerte sur tous les canaux configurés.
@@ -153,7 +156,10 @@ def send_alert(alert: Alert) -> dict:
     if WEBHOOK_URL:
         results["webhook"] = _send_webhook(alert)
     else:
-        results["webhook"] = {"status": "skipped", "reason": "ALERT_WEBHOOK_URL non configuré"}
+        results["webhook"] = {
+            "status": "skipped",
+            "reason": "ALERT_WEBHOOK_URL non configuré",
+        }
 
     # 3. Email
     if ALERT_EMAIL and SMTP_USER:
@@ -163,8 +169,8 @@ def send_alert(alert: Alert) -> dict:
 
     # Log console
     level_log = {
-        AlertLevel.INFO:     log.info,
-        AlertLevel.WARNING:  log.warning,
+        AlertLevel.INFO: log.info,
+        AlertLevel.WARNING: log.warning,
         AlertLevel.CRITICAL: log.error,
     }.get(alert.level, log.info)
 
@@ -205,8 +211,8 @@ def _send_email(alert: Alert) -> dict:
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"[NewsOps Alert] {alert.level.value.upper()} — {alert.title}"
-        msg["From"]    = SMTP_USER
-        msg["To"]      = ALERT_EMAIL
+        msg["From"] = SMTP_USER
+        msg["To"] = ALERT_EMAIL
         msg.attach(MIMEText(alert.format_email_body(), "plain"))
 
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
@@ -224,6 +230,7 @@ def _send_email(alert: Alert) -> dict:
 # RÈGLES D'ALERTE — appelées par le monitoring
 # ─────────────────────────────────────────────────────────────
 
+
 def check_drift_alert(drift_result: dict) -> Optional[Alert]:
     """Génère une alerte si le drift dépasse le seuil."""
     drift_share = drift_result.get("drift_share", 0.0)
@@ -232,9 +239,9 @@ def check_drift_alert(drift_result: dict) -> Optional[Alert]:
     if alert_level == "ok":
         return None
 
-    level   = AlertLevel.CRITICAL if alert_level == "critical" else AlertLevel.WARNING
+    level = AlertLevel.CRITICAL if alert_level == "critical" else AlertLevel.WARNING
     n_drift = drift_result.get("n_drifted", 0)
-    n_feat  = drift_result.get("n_features", 0)
+    n_feat = drift_result.get("n_features", 0)
 
     drifted_features = [
         f"{k} (p={v['p_value']:.4f})"
@@ -251,11 +258,11 @@ def check_drift_alert(drift_result: dict) -> Optional[Alert]:
             "Vérifier si un retraining est nécessaire."
         ),
         metrics={
-            "drift_share":   f"{drift_share:.1%}",
-            "n_drifted":     n_drift,
-            "n_features":    n_feat,
-            "alert_level":   alert_level,
-            "timestamp":     drift_result.get("timestamp", ""),
+            "drift_share": f"{drift_share:.1%}",
+            "n_drifted": n_drift,
+            "n_features": n_feat,
+            "alert_level": alert_level,
+            "timestamp": drift_result.get("timestamp", ""),
         },
     )
 
@@ -273,10 +280,10 @@ def check_latency_alert(avg_latency_ms: float, n_requests: int) -> Optional[Aler
             f"({LATENCY_THRESHOLD_MS:.0f}ms) sur {n_requests} requêtes."
         ),
         metrics={
-            "avg_latency_ms":      f"{avg_latency_ms:.1f}",
-            "threshold_ms":        f"{LATENCY_THRESHOLD_MS:.0f}",
-            "n_requests":          n_requests,
-            "degradation_factor":  f"{avg_latency_ms / LATENCY_THRESHOLD_MS:.1f}x",
+            "avg_latency_ms": f"{avg_latency_ms:.1f}",
+            "threshold_ms": f"{LATENCY_THRESHOLD_MS:.0f}",
+            "n_requests": n_requests,
+            "degradation_factor": f"{avg_latency_ms / LATENCY_THRESHOLD_MS:.1f}x",
         },
     )
 
@@ -298,10 +305,10 @@ def check_error_rate_alert(n_errors: int, n_requests: int) -> Optional[Alert]:
             f"({ERROR_RATE_THRESHOLD:.1%}) sur {n_requests} requêtes."
         ),
         metrics={
-            "error_rate":      f"{error_rate:.1%}",
-            "n_errors":        n_errors,
-            "n_requests":      n_requests,
-            "threshold":       f"{ERROR_RATE_THRESHOLD:.1%}",
+            "error_rate": f"{error_rate:.1%}",
+            "n_errors": n_errors,
+            "n_requests": n_requests,
+            "threshold": f"{ERROR_RATE_THRESHOLD:.1%}",
         },
     )
 
@@ -319,9 +326,9 @@ def check_model_performance_alert(test_f1: float) -> Optional[Alert]:
             f"({F1_MIN_THRESHOLD:.4f}). Retraining recommandé."
         ),
         metrics={
-            "current_f1":   f"{test_f1:.4f}",
+            "current_f1": f"{test_f1:.4f}",
             "threshold_f1": f"{F1_MIN_THRESHOLD:.4f}",
-            "gap":          f"{F1_MIN_THRESHOLD - test_f1:.4f}",
+            "gap": f"{F1_MIN_THRESHOLD - test_f1:.4f}",
         },
     )
 
@@ -346,10 +353,12 @@ def run_all_checks(
     for alert in checks:
         if alert is not None:
             result = send_alert(alert)
-            alerts_sent.append({
-                "alert":   alert.to_dict(),
-                "results": result,
-            })
+            alerts_sent.append(
+                {
+                    "alert": alert.to_dict(),
+                    "results": result,
+                }
+            )
 
     if not alerts_sent:
         log.info("✅ Tous les checks sont OK — aucune alerte")

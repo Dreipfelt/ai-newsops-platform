@@ -20,9 +20,9 @@ Usage :
   python src/register_model.py --action compare
 """
 
+import argparse
 import json
 import logging
-import argparse
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -40,12 +40,12 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────
-MODELS_DIR      = Path("models/distilbert")
-BEST_MODEL_DIR  = MODELS_DIR / "best_model"
-METRICS_FILE    = MODELS_DIR / "training_metrics.json"
-BACKUP_DIR      = MODELS_DIR / "versions"
-MODEL_NAME      = "news-classifier-distilbert"
-MLFLOW_URI      = "sqlite:///mlflow.db"
+MODELS_DIR = Path("models/distilbert")
+BEST_MODEL_DIR = MODELS_DIR / "best_model"
+METRICS_FILE = MODELS_DIR / "training_metrics.json"
+BACKUP_DIR = MODELS_DIR / "versions"
+MODEL_NAME = "news-classifier-distilbert"
+MLFLOW_URI = "sqlite:///mlflow.db"
 
 mlflow.set_tracking_uri(MLFLOW_URI)
 client = MlflowClient()
@@ -54,6 +54,7 @@ client = MlflowClient()
 # ─────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────
+
 
 def load_current_metrics() -> dict:
     """Charge les métriques du modèle actuel."""
@@ -77,6 +78,7 @@ def get_or_create_experiment(name: str) -> str:
 # ACTIONS
 # ─────────────────────────────────────────────────────────────
 
+
 def register_model():
     """Enregistre le modèle actuel dans le MLflow Model Registry."""
     metrics = load_current_metrics()
@@ -85,26 +87,32 @@ def register_model():
         log.error(f"Modèle non trouvé : {BEST_MODEL_DIR}")
         return
 
-    log.info(f"Enregistrement du modèle dans MLflow Registry...")
+    log.info("Enregistrement du modèle dans MLflow Registry...")
     mlflow.set_experiment("news-classifier-registry")
 
-    with mlflow.start_run(run_name=f"register-{datetime.now().strftime('%Y%m%d-%H%M')}") as run:
+    with mlflow.start_run(
+        run_name=f"register-{datetime.now().strftime('%Y%m%d-%H%M')}"
+    ) as run:
         # Logger les métriques
         if metrics:
-            mlflow.log_metrics({
-                "test_f1_macro":  metrics.get("test_f1_macro", 0),
-                "test_accuracy":  metrics.get("test_accuracy", 0),
-                "best_val_f1":    metrics.get("best_val_f1", 0),
-                "baseline_f1":    metrics.get("baseline_f1", 0),
-                "delta_f1":       metrics.get("delta_f1", 0),
-            })
-            mlflow.log_params({
-                "model_name":    metrics.get("model", "distilbert-base-uncased"),
-                "epochs_run":    metrics.get("epochs_run", 0),
-                "num_labels":    len(metrics.get("class_names", [])),
-                "fast_mode":     str(metrics.get("fast_mode", False)),
-                "registered_at": datetime.now().isoformat(),
-            })
+            mlflow.log_metrics(
+                {
+                    "test_f1_macro": metrics.get("test_f1_macro", 0),
+                    "test_accuracy": metrics.get("test_accuracy", 0),
+                    "best_val_f1": metrics.get("best_val_f1", 0),
+                    "baseline_f1": metrics.get("baseline_f1", 0),
+                    "delta_f1": metrics.get("delta_f1", 0),
+                }
+            )
+            mlflow.log_params(
+                {
+                    "model_name": metrics.get("model", "distilbert-base-uncased"),
+                    "epochs_run": metrics.get("epochs_run", 0),
+                    "num_labels": len(metrics.get("class_names", [])),
+                    "fast_mode": str(metrics.get("fast_mode", False)),
+                    "registered_at": datetime.now().isoformat(),
+                }
+            )
 
         # Logger les artifacts
         mlflow.log_artifact(str(BEST_MODEL_DIR / "config.json"))
@@ -135,18 +143,18 @@ def register_model():
                 with open(version_map_file) as f:
                     version_map = json.load(f)
             version_map[str(version)] = {
-                "run_id":       run.info.run_id,
-                "backup_path":  str(backup_path),
+                "run_id": run.info.run_id,
+                "backup_path": str(backup_path),
                 "registered_at": datetime.now().isoformat(),
-                "metrics":      {
+                "metrics": {
                     "test_f1_macro": metrics.get("test_f1_macro"),
                     "test_accuracy": metrics.get("test_accuracy"),
-                }
+                },
             }
             with open(version_map_file, "w") as f:
                 json.dump(version_map, f, indent=2)
 
-            print(f"\n✅ Modèle enregistré dans MLflow Model Registry")
+            print("\n✅ Modèle enregistré dans MLflow Model Registry")
             print(f"   Nom    : {MODEL_NAME}")
             print(f"   Version: {version}")
             print(f"   Run ID : {run.info.run_id}")
@@ -156,7 +164,9 @@ def register_model():
 
         except Exception as e:
             log.error(f"Enregistrement MLflow échoué : {e}")
-            log.info("Conseil : MLflow Model Registry nécessite un backend SQL (sqlite:///mlflow.db)")
+            log.info(
+                "Conseil : MLflow Model Registry nécessite un backend SQL (sqlite:///mlflow.db)"
+            )
 
 
 def list_versions():
@@ -194,7 +204,9 @@ def list_versions():
             version_map = json.load(f)
         for ver, info in version_map.items():
             metrics = info.get("metrics", {})
-            print(f"  v{ver} | F1={metrics.get('test_f1_macro', 'N/A')} | {info.get('registered_at', '')[:10]}")
+            print(
+                f"  v{ver} | F1={metrics.get('test_f1_macro', 'N/A')} | {info.get('registered_at', '')[:10]}"
+            )
 
 
 def promote_model(version: int):
@@ -224,8 +236,12 @@ def rollback_model(version: int):
     # Chercher dans le version_map local
     version_map_file = BACKUP_DIR / "version_map.json"
     if not version_map_file.exists():
-        log.error("Aucun backup local trouvé. Le rollback nécessite des backups préalables.")
-        log.error("→ Enregistrer d'abord : python src/register_model.py --action register")
+        log.error(
+            "Aucun backup local trouvé. Le rollback nécessite des backups préalables."
+        )
+        log.error(
+            "→ Enregistrer d'abord : python src/register_model.py --action register"
+        )
         return
 
     with open(version_map_file) as f:
@@ -244,7 +260,9 @@ def rollback_model(version: int):
         return
 
     # Sauvegarder la version actuelle avant rollback
-    current_backup = MODELS_DIR / f"pre_rollback_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    current_backup = (
+        MODELS_DIR / f"pre_rollback_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
     if BEST_MODEL_DIR.exists():
         shutil.copytree(BEST_MODEL_DIR, current_backup)
         log.info(f"Version actuelle sauvegardée : {current_backup}")
@@ -269,17 +287,17 @@ def rollback_model(version: int):
         log.warning(f"MLflow update échoué (non bloquant) : {e}")
 
     metrics = backup_info.get("metrics", {})
-    print(f"\n✅ Rollback réussi !")
+    print("\n✅ Rollback réussi !")
     print(f"   Version restaurée : {version}")
     print(f"   F1 macro          : {metrics.get('test_f1_macro', 'N/A')}")
     print(f"   Backup pré-rollback : {current_backup}")
-    print(f"\n⚠️  Redémarrer l'API pour charger le modèle restauré :")
-    print(f"   fuser -k 8000/tcp && uvicorn src.api.main:app --host 0.0.0.0 --port 8000")
+    print("\n⚠️  Redémarrer l'API pour charger le modèle restauré :")
+    print("   fuser -k 8000/tcp && uvicorn src.api.main:app --host 0.0.0.0 --port 8000")
 
 
 def compare_versions():
     """Compare les métriques de toutes les versions disponibles."""
-    print(f"\n── Comparaison des versions ────────────────────────────")
+    print("\n── Comparaison des versions ────────────────────────────")
 
     version_map_file = BACKUP_DIR / "version_map.json"
     if not version_map_file.exists():
@@ -297,7 +315,7 @@ def compare_versions():
 
     for ver, info in sorted(version_map.items(), key=lambda x: int(x[0])):
         metrics = info.get("metrics", {})
-        f1  = metrics.get("test_f1_macro", 0) or 0
+        f1 = metrics.get("test_f1_macro", 0) or 0
         acc = metrics.get("test_accuracy", 0) or 0
         date = info.get("registered_at", "")[:10]
         marker = " ← BEST" if f1 > best_f1 else ""
@@ -307,12 +325,15 @@ def compare_versions():
         print(f"  v{ver:<9} {f1:<12.4f} {acc:<12.4f} {date}{marker}")
 
     print(f"\n  Meilleure version : v{best_version} (F1={best_f1:.4f})")
-    print(f"\n  Pour promouvoir : python src/register_model.py --action promote --version {best_version}")
+    print(
+        f"\n  Pour promouvoir : python src/register_model.py --action promote --version {best_version}"
+    )
 
 
 # ─────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────
+
 
 def main(args):
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -338,7 +359,9 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="MLflow Model Registry — versioning et rollback")
+    parser = argparse.ArgumentParser(
+        description="MLflow Model Registry — versioning et rollback"
+    )
     parser.add_argument(
         "--action",
         choices=["register", "list", "promote", "rollback", "compare"],
