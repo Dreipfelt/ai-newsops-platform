@@ -8,5 +8,15 @@
     "threshold": 0.3,
     "n_reference": 100,
     "n_current": 50
+  },
+  {
+    "timestamp": "2026-07-07T22:59:03.098855",
+    "status": "drift",
+    "drift_detected": false,
+    "significant_drift": true,
+    "drift_score": 0.5,
+    "threshold": 0.3,
+    "n_reference": 500,
+    "n_current": 50
   }
 ]

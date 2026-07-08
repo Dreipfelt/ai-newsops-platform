@@ -1,0 +1,47 @@
+{
+  "best_trial": 2,
+  "best_val_f1": 0.5084405905347209,
+  "best_params": {
+    "learning_rate": 2.631245451057452e-05,
+    "weight_decay": 0.07080725777960455,
+    "dropout": 0.10411689885916049,
+    "warmup_ratio": 0.14548647782429913
+  },
+  "n_trials": 3,
+  "epochs_per_trial": 1,
+  "all_trials": [
+    {
+      "number": 0,
+      "value": 0.3550704504105567,
+      "params": {
+        "learning_rate": 1.827226177606625e-05,
+        "weight_decay": 0.09507143064099162,
+        "dropout": 0.24639878836228102,
+        "warmup_ratio": 0.08979877262955549
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "number": 1,
+      "value": 0.34912345876598133,
+      "params": {
+        "learning_rate": 1.2854415975274441e-05,
+        "weight_decay": 0.015599452033620266,
+        "dropout": 0.1116167224336399,
+        "warmup_ratio": 0.12992642186624026
+      },
+      "state": "TrialState.COMPLETE"
+    },
+    {
+      "number": 2,
+      "value": 0.5084405905347209,
+      "params": {
+        "learning_rate": 2.631245451057452e-05,
+        "weight_decay": 0.07080725777960455,
+        "dropout": 0.10411689885916049,
+        "warmup_ratio": 0.14548647782429913
+      },
+      "state": "TrialState.COMPLETE"
+    }
+  ]
+}

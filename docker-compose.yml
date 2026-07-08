@@ -15,6 +15,7 @@ services:
       - ./models/distilbert/best_model:/app/models/distilbert/best_model:ro
       - ./models/distilbert/training_metrics.json:/app/models/distilbert/training_metrics.json:ro
       - ./data/processed/label_mapping.json:/app/data/processed/label_mapping.json:ro
+      - ./data/processed/test.parquet:/app/data/processed/test.parquet:ro
       - ./monitoring:/app/monitoring
       - ./logs:/app/logs
     restart: unless-stopped
