@@ -79,23 +79,23 @@ docker-compose ps
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│                           AI NewsOps Platform                                    │
-│                                                                                  │
+│                           AI NewsOps Platform                                     │
+│                                                                                    │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌────────────────────┐ │
-│  │    DATA     │    │   TRAINING  │    │  DEPLOYMENT │    │    OPERATIONS      │ │
+│  │    DATA      │    │   TRAINING   │    │  DEPLOYMENT  │    │    OPERATIONS      │ │
 │  │             │    │             │    │             │    │                    │ │
-│  │ Kaggle API  │──▶│ DistilBERT  │──▶│  FastAPI    │──▶│  Prometheus        │ │
+│  │ Kaggle API  │───▶│ DistilBERT  │───▶│  FastAPI    │───▶│  Prometheus        │ │
 │  │ DVC         │    │ HuggingFace │    │  Docker     │    │  Grafana           │ │
 │  │ Parquet     │    │ MLflow      │    │  Compose    │    │  Evidently AI      │ │
 │  │ 208k arts.  │    │             │    │  GH Actions │    │  Streamlit         │ │
 │  └─────────────┘    └─────────────┘    └─────────────┘    └────────────────────┘ │
-│                                                                     │            │
-│                                                                     ▼            │
-│                                                        ┌────────────────────┐    │
-│                                                        │  Apache Airflow    │    │
-│                                                        │  Weekly retraining │    │
-│                                                        │ Champion/challenger│    │
-│                                                        └────────────────────┘    │
+│                                                                     │              │
+│                                                                     ▼              │
+│                                                        ┌────────────────────┐     │
+│                                                        │  Apache Airflow    │     │
+│                                                        │  Weekly retraining │     │
+│                                                        │  Champion/challenger│     │
+│                                                        └────────────────────┘     │
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -196,22 +196,27 @@ Full training on 100% of data with GPU acceleration is expected to reach F1 ≥ 
 
 ## Hyperparameter Tuning (Optuna)
 
-A Bayesian hyperparameter search (`src/models/tune_optuna.py`) was implemented to satisfy the certification requirement for systematic hyperparameter optimisation, searching over learning rate, weight decay, dropout, and warmup ratio using Optuna's TPE sampler with median pruning, and logging every trial to MLflow for full traceability.
+A Bayesian hyperparameter search (`src/models/tune_optuna.py`) satisfies the certification requirement for systematic hyperparameter optimisation, searching over learning rate, weight decay, dropout, and warmup ratio using Optuna's TPE sampler with median pruning, with every trial logged to MLflow for full traceability.
 
-**Honest note on execution**: full multi-trial runs (8 trials × 1 epoch) proved impractical on the development machine within the certification timeline — each trial on a 12-thread CPU already running the full 8-service Docker stack (API, MLflow, Prometheus, Grafana, Streamlit) took 40+ minutes due to severe CPU contention (the same phenomenon documented in [Horizontal Scalability](#horizontal-scalability--load-test-results) above). A completed single trial reached:
+**Completed run**: 3 trials, 1 epoch each, 5% of training data (7,306 examples), ~52 minutes total on a 12-thread CPU with no GPU.
 
-```
-Trial 0 — lr=1.83e-05, weight_decay=0.095, dropout=0.246, warmup_ratio=0.09
-Result: val_f1_macro = 0.5815 (1 epoch, 10% of training data)
-```
+| Trial | Learning Rate | Weight Decay | Dropout | Warmup Ratio | Val F1 Macro |
+|---|:---:|:---:|:---:|:---:|:---:|
+| 0 | 1.83e-05 | 0.095 | 0.246 | 0.090 | 0.3551 |
+| 1 | 1.29e-05 | 0.016 | 0.112 | 0.130 | 0.3491 |
+| **2 (best)** | **2.63e-05** | **0.071** | **0.104** | **0.145** | **0.5084** |
 
-This confirms the tuning pipeline is fully functional end-to-end — search space sampling, training loop, pruning logic, and MLflow logging all work correctly — but a statistically meaningful multi-trial comparison was not completed given the time and compute constraints of this project. Running the full search on a dedicated machine or with the Docker stack stopped (`docker compose down`) is expected to complete in under 2 hours for 8 trials.
+The search reveals a clear pattern: a higher learning rate (2.63e-05) combined with lower dropout (0.10 vs 0.25) converges substantially faster within a single epoch on this reduced sample — a +43% relative F1 improvement between the worst and best trial, demonstrating that the search space genuinely matters rather than being cosmetic.
+
+**Honest note on scope**: this run uses a reduced 5% data sample and a single epoch per trial to fit within the certification timeline (each trial takes ~17 minutes even with a fully idle CPU). This is standard Optuna practice — hyperparameter search is meant to compare configurations relative to each other, not to produce the final production model. The winning configuration (lr=2.63e-05) is a reasonable candidate to carry into a full training run on 100% of the data with more epochs, which is expected to reach the F1≈0.68 already achieved with the current hand-tuned configuration, or potentially exceed it.
 
 ```bash
 # Reproduce (recommended: stop the Docker stack first to free all CPU cores)
 docker compose down
-python src/models/tune_optuna.py --n-trials 8 --epochs-per-trial 1 --sample-frac 0.10
+python src/models/tune_optuna.py --n-trials 8 --epochs-per-trial 2 --sample-frac 0.10
 ```
+
+Optuna visualisations (optimisation history, parameter importance) are generated at `models/distilbert/optuna/*.html`.
 
 ---
 
