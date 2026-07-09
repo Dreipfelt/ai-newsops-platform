@@ -45,80 +45,78 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────
 CATEGORY_MAPPING = {
     # Politique & actualités nationales
-    "POLITICS":            "politics",
-    "THE WORLDPOST":        "politics",
-    "WORLD NEWS":           "politics",
-    "WORLDPOST":            "politics",
-    "U.S. NEWS":            "politics",
-
+    "POLITICS": "politics",
+    "THE WORLDPOST": "politics",
+    "WORLD NEWS": "politics",
+    "WORLDPOST": "politics",
+    "U.S. NEWS": "politics",
     # Bien-être & santé
-    "WELLNESS":             "health_wellness",
-    "HEALTHY LIVING":       "health_wellness",
-    "MENTAL HEALTH":        "health_wellness",
-    "TASTE":                "health_wellness",
-
+    "WELLNESS": "health_wellness",
+    "HEALTHY LIVING": "health_wellness",
+    "MENTAL HEALTH": "health_wellness",
+    "TASTE": "health_wellness",
     # Divertissement
-    "ENTERTAINMENT":        "entertainment",
-    "COMEDY":               "entertainment",
-    "WEIRD NEWS":           "entertainment",
-
+    "ENTERTAINMENT": "entertainment",
+    "COMEDY": "entertainment",
+    "WEIRD NEWS": "entertainment",
     # Style de vie
-    "TRAVEL":               "lifestyle",
-    "STYLE & BEAUTY":       "lifestyle",
-    "FOOD & DRINK":         "lifestyle",
-    "HOME & LIVING":        "lifestyle",
-    "GOOD NEWS":            "lifestyle",
-    "STYLE":                "lifestyle",
-
+    "TRAVEL": "lifestyle",
+    "STYLE & BEAUTY": "lifestyle",
+    "FOOD & DRINK": "lifestyle",
+    "HOME & LIVING": "lifestyle",
+    "GOOD NEWS": "lifestyle",
+    "STYLE": "lifestyle",
     # Famille & éducation
-    "PARENTING":            "family_education",
-    "PARENTS":              "family_education",
-    "COLLEGE":              "family_education",
-    "EDUCATION":            "family_education",
-
+    "PARENTING": "family_education",
+    "PARENTS": "family_education",
+    "COLLEGE": "family_education",
+    "EDUCATION": "family_education",
     # Médias & voix minoritaires
-    "QUEER VOICES":         "media",
-    "BLACK VOICES":         "media",
-    "WOMEN":                "media",
-    "MEDIA":                "media",
-    "LATINO VOICES":        "media",
-
+    "QUEER VOICES": "media",
+    "BLACK VOICES": "media",
+    "WOMEN": "media",
+    "MEDIA": "media",
+    "LATINO VOICES": "media",
     # Business & finance
-    "BUSINESS":             "business",
-    "MONEY":                "business",
-    "FIFTY":                "business",
-
+    "BUSINESS": "business",
+    "MONEY": "business",
+    "FIFTY": "business",
     # Sport
-    "SPORTS":               "sports",
-
+    "SPORTS": "sports",
     # International & société
-    "IMPACT":               "international",
-    "RELIGION":             "international",
-
+    "IMPACT": "international",
+    "RELIGION": "international",
     # Technologie & science
-    "GREEN":                "tech_science",
-    "SCIENCE":              "tech_science",
-    "TECH":                 "tech_science",
-    "ENVIRONMENT":          "tech_science",
-
+    "GREEN": "tech_science",
+    "SCIENCE": "tech_science",
+    "TECH": "tech_science",
+    "ENVIRONMENT": "tech_science",
     # Arts & culture — catégorie distincte, NE PAS fusionner dans entertainment
-    "ARTS":                 "arts_culture",
-    "ARTS & CULTURE":       "arts_culture",
-    "CULTURE & ARTS":       "arts_culture",
-
+    "ARTS": "arts_culture",
+    "ARTS & CULTURE": "arts_culture",
+    "CULTURE & ARTS": "arts_culture",
     # Faits divers
-    "CRIME":                "crime",
-
+    "CRIME": "crime",
     # Divers
-    "WEDDINGS":             "other",
-    "DIVORCE":              "other",
+    "WEDDINGS": "other",
+    "DIVORCE": "other",
 }
 
 # 13 super-catégories attendues — utilisé pour valider le résultat final
 EXPECTED_CATEGORIES = {
-    "arts_culture", "business", "crime", "entertainment", "family_education",
-    "health_wellness", "international", "lifestyle", "media", "other",
-    "politics", "sports", "tech_science",
+    "arts_culture",
+    "business",
+    "crime",
+    "entertainment",
+    "family_education",
+    "health_wellness",
+    "international",
+    "lifestyle",
+    "media",
+    "other",
+    "politics",
+    "sports",
+    "tech_science",
 }
 
 
@@ -132,7 +130,9 @@ def load_data(path: str) -> pd.DataFrame:
     known = set(CATEGORY_MAPPING.keys())
     unmapped = found - known
     if unmapped:
-        log.warning(f"  Catégories source non mappées explicitement (-> 'other') : {sorted(unmapped)}")
+        log.warning(
+            f"  Catégories source non mappées explicitement (-> 'other') : {sorted(unmapped)}"
+        )
 
     log.info(f"  {len(df):,} lignes - {df['category'].nunique()} categories source")
     return df
@@ -147,7 +147,9 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df = df[(df["date"].dt.year >= 2012) & (df["date"].dt.year <= 2022)]
     df = df[df["headline"].str.len() >= 10]
     df = df.reset_index(drop=True)
-    log.info(f"  Nettoyage : {n0:,} -> {len(df):,} lignes ({n0 - len(df):,} supprimees)")
+    log.info(
+        f"  Nettoyage : {n0:,} -> {len(df):,} lignes ({n0 - len(df):,} supprimees)"
+    )
     return df
 
 
@@ -161,7 +163,9 @@ def map_categories(df: pd.DataFrame) -> pd.DataFrame:
 
     dist = df["category"].value_counts()
     ratio = dist.iloc[0] / dist.iloc[-1]
-    log.info(f"  {df['category'].nunique()} super-categories - ratio desequilibre : {ratio:.1f}x")
+    log.info(
+        f"  {df['category'].nunique()} super-categories - ratio desequilibre : {ratio:.1f}x"
+    )
 
     actual = set(dist.index)
     missing = EXPECTED_CATEGORIES - actual
@@ -218,8 +222,12 @@ def encode_labels(df: pd.DataFrame):
 
 def split_data(df: pd.DataFrame):
     """Split stratifie 70/15/15, seed fixe pour reproductibilite totale."""
-    train, temp = train_test_split(df, test_size=0.30, random_state=42, stratify=df["label"])
-    val, test = train_test_split(temp, test_size=0.50, random_state=42, stratify=temp["label"])
+    train, temp = train_test_split(
+        df, test_size=0.30, random_state=42, stratify=df["label"]
+    )
+    val, test = train_test_split(
+        temp, test_size=0.50, random_state=42, stratify=temp["label"]
+    )
     log.info(f"  Split - train:{len(train):,} - val:{len(val):,} - test:{len(test):,}")
     return train, val, test
 
@@ -309,31 +317,45 @@ def main(args):
         validate_consistency(args.output, mapping)
         generate_report(df_raw, df, args.output)
 
-        mlflow.log_params({
-            "n_categories_original": df_raw["category"].nunique(),
-            "n_categories_final": df["category"].nunique(),
-            "train_size": len(train),
-            "val_size": len(val),
-            "test_size": len(test),
-            "random_state": 42,
-        })
-        mlflow.log_metrics({
-            "total_samples": len(df),
-            "samples_removed": len(df_raw) - len(df),
-            "avg_text_length": round(df["text_length"].mean(), 1),
-            "imbalance_ratio": round(
-                df["category"].value_counts().iloc[0] / df["category"].value_counts().iloc[-1], 1
-            ),
-        })
+        mlflow.log_params(
+            {
+                "n_categories_original": df_raw["category"].nunique(),
+                "n_categories_final": df["category"].nunique(),
+                "train_size": len(train),
+                "val_size": len(val),
+                "test_size": len(test),
+                "random_state": 42,
+            }
+        )
+        mlflow.log_metrics(
+            {
+                "total_samples": len(df),
+                "samples_removed": len(df_raw) - len(df),
+                "avg_text_length": round(df["text_length"].mean(), 1),
+                "imbalance_ratio": round(
+                    df["category"].value_counts().iloc[0]
+                    / df["category"].value_counts().iloc[-1],
+                    1,
+                ),
+            }
+        )
         mlflow.log_dict(mapping, "label_mapping.json")
 
         log.info("Preprocessing termine -- donnees coherentes et validees.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Preprocessing -- News Category Dataset")
-    parser.add_argument("--input", default="data/raw/News_Category_Dataset_v3.json",
-                        help="Chemin vers le fichier JSON brut HuffPost")
-    parser.add_argument("--output", default="data/processed",
-                        help="Dossier de sortie des artifacts (parquet + label_mapping.json)")
+    parser = argparse.ArgumentParser(
+        description="Preprocessing -- News Category Dataset"
+    )
+    parser.add_argument(
+        "--input",
+        default="data/raw/News_Category_Dataset_v3.json",
+        help="Chemin vers le fichier JSON brut HuffPost",
+    )
+    parser.add_argument(
+        "--output",
+        default="data/processed",
+        help="Dossier de sortie des artifacts (parquet + label_mapping.json)",
+    )
     main(parser.parse_args())
