@@ -198,17 +198,32 @@ Full training on 100% of data with GPU acceleration is expected to reach F1 ≥ 
 
 A Bayesian hyperparameter search (`src/models/tune_optuna.py`) satisfies the certification requirement for systematic hyperparameter optimisation, searching over learning rate, weight decay, dropout, and warmup ratio using Optuna's TPE sampler with median pruning, with every trial logged to MLflow for full traceability.
 
-**Completed run**: 3 trials, 1 epoch each, 5% of training data (7,306 examples), ~52 minutes total on a 12-thread CPU with no GPU.
+**Completed run**: 8 trials, 2 epochs each, 10% of training data (14,611 examples), executed with the Docker stack stopped to free all 12 CPU threads.
 
-| Trial | Learning Rate | Weight Decay | Dropout | Warmup Ratio | Val F1 Macro |
-|---|:---:|:---:|:---:|:---:|:---:|
-| 0 | 1.83e-05 | 0.095 | 0.246 | 0.090 | 0.3551 |
-| 1 | 1.29e-05 | 0.016 | 0.112 | 0.130 | 0.3491 |
-| **2 (best)** | **2.63e-05** | **0.071** | **0.104** | **0.145** | **0.5084** |
+| Trial | Learning Rate | Weight Decay | Dropout | Warmup | Val F1 Macro |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 0 | 1.83e-05 | 0.0951 | 0.2464 | 0.0898 | 0.6103 |
+| 1 | 1.29e-05 | 0.0156 | 0.1116 | 0.1299 | 0.6155 |
+| 2 | 2.63e-05 | 0.0708 | 0.1041 | 0.1455 | 0.6415 |
+| **3 (best)** | **3.82e-05** | **0.0212** | **0.1364** | **0.0275** | **0.6561** |
+| 4 | 1.63e-05 | 0.0525 | 0.1864 | 0.0437 | 0.6168 |
+| 5 | 2.68e-05 | 0.0139 | 0.1584 | 0.0550 | 0.6403 |
+| 6 | 2.08e-05 | 0.0785 | 0.1399 | 0.0771 | 0.6325 |
+| 7 | 2.59e-05 | 0.0046 | 0.2215 | 0.0256 | 0.6327 |
 
-The search reveals a clear pattern: a higher learning rate (2.63e-05) combined with lower dropout (0.10 vs 0.25) converges substantially faster within a single epoch on this reduced sample — a +43% relative F1 improvement between the worst and best trial, demonstrating that the search space genuinely matters rather than being cosmetic.
+### What the search revealed
 
-**Honest note on scope**: this run uses a reduced 5% data sample and a single epoch per trial to fit within the certification timeline (each trial takes ~17 minutes even with a fully idle CPU). This is standard Optuna practice — hyperparameter search is meant to compare configurations relative to each other, not to produce the final production model. The winning configuration (lr=2.63e-05) is a reasonable candidate to carry into a full training run on 100% of the data with more epochs, which is expected to reach the F1≈0.68 already achieved with the current hand-tuned configuration, or potentially exceed it.
+The eight trials expose a consistent and actionable pattern rather than random noise:
+
+**Learning rate is the dominant factor.** The four trials with `lr ≥ 2.5e-05` (trials 2, 3, 5, 7) all scored above 0.63, while the three trials with `lr ≤ 1.85e-05` (trials 0, 1, 4) all scored below 0.62. The best configuration uses `lr = 3.82e-05` — substantially higher than the `3e-05` that had been chosen by hand from published BERT fine-tuning conventions.
+
+**Lower dropout helps at this training budget.** The best trial uses `dropout = 0.136`, well below the `0.2` originally set. With only two epochs on a reduced sample, aggressive regularisation appears to slow convergence more than it prevents overfitting.
+
+**Spread between worst and best is meaningful.** F1 ranges from 0.6103 to 0.6561 — a 7.5% relative improvement purely from hyperparameter choice, which confirms the search space was worth exploring rather than being cosmetic.
+
+### Scope and next step
+
+This run uses a 10% data sample and two epochs per trial — standard Optuna practice, since hyperparameter search compares configurations *relative to each other* rather than producing the final production model. The winning configuration (`lr=3.82e-05`, `dropout=0.136`, `weight_decay=0.021`, `warmup=0.028`) is the natural candidate to carry into a full training run on 100% of the data, which would be expected to meet or exceed the F1 ≈ 0.68 achieved by the current production model with its hand-tuned settings.
 
 ```bash
 # Reproduce (recommended: stop the Docker stack first to free all CPU cores)
@@ -216,7 +231,7 @@ docker compose down
 python src/models/tune_optuna.py --n-trials 8 --epochs-per-trial 2 --sample-frac 0.10
 ```
 
-Optuna visualisations (optimisation history, parameter importance) are generated at `models/distilbert/optuna/*.html`.
+Optuna visualisations (optimisation history, parameter importance, parallel coordinates) are generated at `models/distilbert/optuna/*.html`.
 
 ---
 
