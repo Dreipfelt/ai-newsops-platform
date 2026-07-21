@@ -610,7 +610,7 @@ tomli==2.4.1
     # via alembic
 tomlkit==0.15.0
     # via dvc
-torch==2.4.0
+torch==2.13.0
     # via
     #   ai-newsops-platform (pyproject.toml)
     #   sentence-transformers
