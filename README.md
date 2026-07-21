@@ -666,5 +666,5 @@ MIT Licence — see [LICENSE](LICENSE).
 
 ## Author
 
-**Frédéric Dreipfelt** — Data Science & AI Engineering, Jedha Bootcamp  
+**Frédéric Tellier** — Data Science & AI Engineering, Jedha Bootcamp  
 AIA Bloc 4 — MLOps Pipeline Certification, 2026
