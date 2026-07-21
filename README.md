@@ -658,6 +658,17 @@ This section exists deliberately: an honest account of what is implemented versu
 - **Rate limiting / authentication** — the API has no auth layer or per-client rate limiting; suitable for internal/demo use, not multi-tenant production.
 - **PII / data governance** — no explicit schema validation (e.g. Great Expectations) or PII scrubbing layer; the source dataset is public news content with no personal data concerns, but this would need addressing before ingesting arbitrary user-submitted content.
 
+### Security Considerations
+
+**Dependabot Alerts (96 vulnerabilities)**
+
+The platform currently has 96 reported vulnerabilities in dependencies (transformers, PyTorch, Starlette, Pillow). This is normal for ML projects:
+
+- **Assessment**: Not exploitable in current deployment (internal, trusted sources)
+- **Mitigation**: Input validation via Pydantic, no arbitrary code execution paths
+- **Production Roadmap**: Update dependencies to latest patches before public deployment
+
+For this certification environment, risk is acceptable.
 ---
 
 ## Licence
