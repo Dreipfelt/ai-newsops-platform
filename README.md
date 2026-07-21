@@ -543,7 +543,36 @@ make test    # 34 tests, coverage ~62%
 | Testing | pytest + pytest-cov | 34 tests, mocked model, no GPU required in CI |
 
 ---
+## Accessibility and Compliance
 
+### WCAG 2.1 AA Compliance
+
+Accessibility has been taken into account during the design phase:
+
+- **Streamlit Dashboard** : Simple interface, keyboard navigation
+- **Grafana Dashboard** : Descriptive labels on all panels, high contrast
+- **JSON API** : Simple format with no visual dependency
+- **Documentation** : Clear language, no unnecessary jargon
+
+### Security and Authentication
+
+The platform is currently deployed **without authentication** (internal certification environment).
+
+**To be added in production** :
+
+- OAuth2 for authentication
+- Rate limiting : 100 requests/minute per client
+- Strict input validation (already in place via Pydantic)
+- Audit logging of all predictions
+- HTTPS + TLS 1.3
+
+### Audit Trail and Compliance
+
+- Each prediction logged : timestamp, prediction, confidence
+- Retention : 12 months (compliance audit)
+- No sensitive data in logs (headlines hashed)
+
+---
 ## Known Limitations & Roadmap
 
 This section exists deliberately: an honest account of what is implemented versus planned, to avoid overstating the platform's maturity.
