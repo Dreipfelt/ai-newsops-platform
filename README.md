@@ -31,8 +31,8 @@
 - [Repository Structure](#repository-structure)
 - [Getting Started](#getting-started)
 - [Technology Stack](#technology-stack)
-- **[Accessibility and Compliance](#accessibility-and-compliance)**
-- **[Service Level Objectives (SLO) and Monitoring](#service-level-objectives-slo-and-monitoring)**
+- [Accessibility and Compliance](#accessibility-and-compliance)
+- [Service Level Objectives (SLO) and Monitoring](#service-level-objectives-slo-and-monitoring)
 - [Known Limitations & Roadmap](#known-limitations--roadmap)
 
 ---
