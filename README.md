@@ -20,6 +20,7 @@
 
 ## Table of Contents
 
+- [Specification Document](docs/specification-document.md) 📋
 - [Project Overview](#project-overview)
 - [Live Stack Inventory](#live-stack-inventory)
 - [System Architecture](#system-architecture)
